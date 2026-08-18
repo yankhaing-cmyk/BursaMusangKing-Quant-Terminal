@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bmk-quant"
+version = "1.0.0"
+description = "Explainable Phase 1 quant scoring engine for Bursa Malaysia"
+requires-python = ">=3.11"
+dependencies = [
+  "boto3>=1.35,<2",
+  "numpy>=2.0,<3",
+  "pandas>=2.2,<3",
+  "requests>=2.32,<3",
+]
+
+[project.optional-dependencies]
+tradingview = [
+  "tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git@e6f6aaa7de439ac6e454d9b26d2760ded8dc4923",
+]
+
+[project.scripts]
+bmk-quant = "bmk_quant.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bmk_quant*"]

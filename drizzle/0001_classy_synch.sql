@@ -1,0 +1,1 @@
+ALTER TABLE `daily_scores` ADD `row_hash` text NOT NULL;

@@ -1,0 +1,12 @@
+{
+  "name": "BursaMusangKing Quant Terminal",
+  "short_name": "BMK Quant",
+  "description": "Explainable Bursa Malaysia full-universe quantitative ranking.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071015",
+  "theme_color": "#071015",
+  "icons": [
+    {"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}
