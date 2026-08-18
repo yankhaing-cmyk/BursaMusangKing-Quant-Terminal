@@ -1,6 +1,8 @@
 name: Daily Quant Pipeline
 
 on:
+  push:
+    branches: [agent/first-shadow-run]
   workflow_dispatch:
     inputs:
       publish:
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   quant:
-    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULED_QUANT == 'true'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULED_QUANT == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: quant-production
