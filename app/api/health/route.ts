@@ -1,16 +1,27 @@
 import { NextResponse } from "next/server";
 import { isOwnerRequest, ownerOnlyResponse } from "@/app/lib/owner-auth";
-import { getDashboardSnapshot } from "@/app/lib/repository";
+import { getDashboardSnapshot, getPortfolioSnapshot } from "@/app/lib/repository";
 
 export async function GET() {
   if (!(await isOwnerRequest())) return ownerOnlyResponse();
-  const snapshot = await getDashboardSnapshot({ pageSize: 10 });
+  const [snapshot, portfolio] = await Promise.all([
+    getDashboardSnapshot({ pageSize: 10 }),
+    getPortfolioSnapshot(),
+  ]);
   return NextResponse.json(
     {
       mode: snapshot.mode,
       run: snapshot.run,
       issues: snapshot.issues,
-      failClosed: snapshot.mode !== "LIVE" || snapshot.run.status !== "ACTIVE",
+      portfolio: {
+        status: portfolio.status,
+        methodologyVersion: portfolio.methodologyVersion,
+        automaticExecution: portfolio.automaticExecution,
+      },
+      failClosed:
+        snapshot.mode !== "LIVE" ||
+        snapshot.run.status !== "ACTIVE" ||
+        portfolio.status !== "ACTIVE",
     },
     { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } },
   );

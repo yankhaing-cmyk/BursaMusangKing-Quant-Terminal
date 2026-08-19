@@ -13,6 +13,10 @@ import {
   validateTradeManifest,
   type TradeManifestPayload,
 } from "@/app/lib/trade-ingest";
+import {
+  validatePortfolioManifest,
+  type PortfolioManifestPayload,
+} from "@/app/lib/portfolio-ingest";
 
 type StartPayload = {
   run_id: string;
@@ -34,6 +38,7 @@ type StartPayload = {
   }>;
   regime: RegimePayload;
   trade: TradeManifestPayload;
+  portfolio: PortfolioManifestPayload;
 };
 
 export async function POST(request: Request) {
@@ -83,6 +88,9 @@ export async function POST(request: Request) {
     if (!body.trade) return errorResponse("missing_trade_manifest", 422);
     const tradeError = validateTradeManifest(body.trade, body.expected_symbols);
     if (tradeError) return errorResponse(tradeError, 422);
+    if (!body.portfolio) return errorResponse("missing_portfolio_manifest", 422);
+    const portfolioError = validatePortfolioManifest(body.portfolio, body.expected_symbols);
+    if (portfolioError) return errorResponse(portfolioError, 422);
     const issues = body.issues ?? [];
     if (issues.length > 100 || issues.some((issue) => issue.severity === "CRITICAL")) {
       return errorResponse("critical_or_excessive_issues", 422);
@@ -119,6 +127,20 @@ export async function POST(request: Request) {
           activeTrade.event_payload_hash !== body.trade.event_payload_hash
         ) {
           return errorResponse("active_run_missing_or_conflicting_trade_layer", 409);
+        }
+        const activePortfolio = await db
+          .prepare(
+            `SELECT status, allocation_payload_hash, summary_hash
+             FROM portfolio_publications WHERE run_id = ? LIMIT 1`,
+          )
+          .bind(latestActive.id)
+          .first<{ status: string; allocation_payload_hash: string; summary_hash: string }>();
+        if (
+          activePortfolio?.status !== "ACTIVE" ||
+          activePortfolio.allocation_payload_hash !== body.portfolio.allocation_payload_hash ||
+          activePortfolio.summary_hash !== body.portfolio.summary_hash
+        ) {
+          return errorResponse("active_run_missing_or_conflicting_portfolio_layer", 409);
         }
         return Response.json({
           ok: true,
@@ -270,6 +292,43 @@ export async function POST(request: Request) {
       Number(storedTrade.automatic_execution) !== 0
     ) {
       return errorResponse("trade_publication_conflict", 409);
+    }
+
+    await db
+      .prepare(
+        `INSERT INTO portfolio_publications
+         (run_id, status, methodology_version, expected_allocations,
+          received_allocations, allocation_payload_hash, summary_hash,
+          summary_received, position_cap, sector_cap, correlation_threshold,
+          automatic_execution, started_at)
+         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)
+         ON CONFLICT(run_id) DO NOTHING`,
+      )
+      .bind(
+        body.run_id,
+        body.portfolio.methodology_version,
+        body.portfolio.expected_allocations,
+        body.portfolio.allocation_payload_hash,
+        body.portfolio.summary_hash,
+        body.portfolio.position_cap,
+        body.portfolio.sector_cap,
+        body.portfolio.correlation_threshold,
+        new Date().toISOString(),
+      )
+      .run();
+    const storedPortfolio = await db
+      .prepare("SELECT * FROM portfolio_publications WHERE run_id = ? LIMIT 1")
+      .bind(body.run_id)
+      .first<Record<string, unknown>>();
+    if (
+      !storedPortfolio || storedPortfolio.status !== "PENDING" ||
+      storedPortfolio.methodology_version !== body.portfolio.methodology_version ||
+      Number(storedPortfolio.expected_allocations) !== body.portfolio.expected_allocations ||
+      storedPortfolio.allocation_payload_hash !== body.portfolio.allocation_payload_hash ||
+      storedPortfolio.summary_hash !== body.portfolio.summary_hash ||
+      Number(storedPortfolio.automatic_execution) !== 0
+    ) {
+      return errorResponse("portfolio_publication_conflict", 409);
     }
 
     const issueStatements = [

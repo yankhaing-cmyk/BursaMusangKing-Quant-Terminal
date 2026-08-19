@@ -44,11 +44,18 @@ def run_command(args: argparse.Namespace) -> int:
     research_outcomes = []
     trade_states = []
     trade_events = []
+    portfolio_allocations = []
+    portfolio_summary = None
     if args.history_db:
         store = ResearchStore(args.history_db)
         research_outcomes = store.save(result)
         trade_states, trade_events, trade_manifest = store.build_trade_artifacts(result)
         result.manifest["trade"] = trade_manifest
+        portfolio_allocations, portfolio_summary, portfolio_manifest = store.build_portfolio_artifacts(
+            result,
+            trade_states,
+        )
+        result.manifest["portfolio"] = portfolio_manifest
         if archive:
             archive.save_checkpoint(
                 args.history_db,
@@ -62,6 +69,8 @@ def run_command(args: argparse.Namespace) -> int:
         research_outcomes,
         trade_states,
         trade_events,
+        portfolio_allocations,
+        portfolio_summary,
     )
     print(
         json.dumps(
@@ -73,6 +82,7 @@ def run_command(args: argparse.Namespace) -> int:
                 "research_observations": len(research_outcomes),
                 "trade_states": len(trade_states),
                 "trade_events": len(trade_events),
+                "portfolio_allocations": len(portfolio_allocations),
                 "artifacts": {name: str(path) for name, path in paths.items()},
             },
             sort_keys=True,

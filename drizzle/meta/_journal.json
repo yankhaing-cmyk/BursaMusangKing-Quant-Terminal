@@ -36,6 +36,13 @@
       "when": 1787138133200,
       "tag": "0004_rainy_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787143122110,
+      "tag": "0005_eager_annihilus",
+      "breakpoints": true
     }
   ]
 }

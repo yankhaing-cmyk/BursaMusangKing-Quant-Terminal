@@ -42,6 +42,8 @@ def write_artifacts(
     research_outcomes: list[dict[str, Any]] | None = None,
     trade_states: list[dict[str, Any]] | None = None,
     trade_events: list[dict[str, Any]] | None = None,
+    portfolio_allocations: list[dict[str, Any]] | None = None,
+    portfolio_summary: dict[str, Any] | None = None,
 ) -> dict[str, Path]:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
@@ -56,6 +58,8 @@ def write_artifacts(
         "research_manifest": output / "research-manifest.json",
         "trade_states": output / "trade-states.jsonl",
         "trade_events": output / "trade-events.jsonl",
+        "portfolio_allocations": output / "portfolio-allocations.jsonl",
+        "portfolio_summary": output / "portfolio-summary.json",
     }
     _atomic_text(
         paths["manifest"],
@@ -66,9 +70,15 @@ def write_artifacts(
     outcomes = research_outcomes or []
     states = trade_states or []
     events = trade_events or []
+    allocations = portfolio_allocations or []
     _atomic_text(paths["research"], _json_lines(outcomes))
     _atomic_text(paths["trade_states"], _json_lines(states))
     _atomic_text(paths["trade_events"], _json_lines(events))
+    _atomic_text(paths["portfolio_allocations"], _json_lines(allocations))
+    _atomic_text(
+        paths["portfolio_summary"],
+        json.dumps(portfolio_summary or {}, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    )
     _atomic_text(
         paths["research_manifest"],
         json.dumps(

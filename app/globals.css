@@ -1300,6 +1300,155 @@ select:focus-visible {
   margin: 9px 0 0;
 }
 
+.portfolio-hero {
+  align-items: center;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 58%),
+    var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 130px;
+  padding: 20px;
+}
+
+.portfolio-hero h2 {
+  font-size: 22px;
+  margin: 7px 0;
+}
+
+.portfolio-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.portfolio-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.portfolio-card.trade-near { border-left-color: var(--red); }
+.portfolio-card.trade-pending { border-left-color: var(--accent); }
+.portfolio-card.trade-open { border-left-color: var(--green); }
+
+.portfolio-card-heading {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.portfolio-card-heading > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.portfolio-card-heading > div > strong,
+.portfolio-weight {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+.portfolio-card-heading small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-weight {
+  color: var(--accent);
+}
+
+.portfolio-card-grid {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0 14px;
+  grid-template-columns: repeat(6, minmax(76px, 1fr));
+  margin: 11px 0 9px;
+  padding-top: 8px;
+}
+
+.portfolio-card-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.portfolio-card-grid span,
+.exposure-list small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.portfolio-card-grid strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.exposure-list,
+.cluster-list {
+  display: grid;
+  gap: 10px;
+}
+
+.exposure-list > div {
+  display: grid;
+  gap: 7px;
+}
+
+.exposure-list > div > span:first-child {
+  display: flex;
+  font-size: 9px;
+  justify-content: space-between;
+}
+
+.exposure-track {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.exposure-track > span {
+  background: linear-gradient(90deg, var(--green), var(--accent));
+  display: block;
+  height: 100%;
+}
+
+.cluster-list > div {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 44px 1fr;
+  padding-bottom: 8px;
+}
+
+.cluster-list strong {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.cluster-list span,
+.portfolio-footnote {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.portfolio-footnote {
+  line-height: 1.5;
+  margin: 14px 0 0;
+}
+
 .trade-event-list {
   border-top: 1px solid var(--line);
 }
@@ -1642,6 +1791,17 @@ select:focus-visible {
     padding: 15px;
   }
 
+  .portfolio-hero {
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 105px;
+    padding: 15px;
+  }
+
+  .portfolio-hero h2 {
+    font-size: 18px;
+  }
+
   .status-line h2,
   .panel h2,
   .ranking-header h2,
@@ -1675,6 +1835,15 @@ select:focus-visible {
   .trade-card-grid {
     gap: 10px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-card-grid {
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-secondary-metrics {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .trade-event-row {

@@ -10,6 +10,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from .pipeline import QuantResult
+from .portfolio import calculate_portfolio_snapshot
 from .research import HORIZONS, METHODOLOGY_VERSION, outcome_hash, score_bucket
 from .trades import calculate_trade_snapshot
 
@@ -135,6 +136,24 @@ CREATE TABLE IF NOT EXISTS local_trade_events (
 );
 CREATE INDEX IF NOT EXISTS local_trade_events_run_idx
   ON local_trade_events(run_id, event_type);
+CREATE TABLE IF NOT EXISTS local_portfolio_publications (
+  run_id TEXT PRIMARY KEY,
+  methodology_version TEXT NOT NULL,
+  expected_allocations INTEGER NOT NULL,
+  allocation_payload_hash TEXT NOT NULL,
+  summary_hash TEXT NOT NULL,
+  summary_json TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS local_portfolio_allocations (
+  run_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  row_hash TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  PRIMARY KEY (run_id, symbol),
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
 """
 
 
@@ -417,6 +436,68 @@ class ResearchStore:
                     raise RuntimeError("conflicting immutable trade event")
             connection.commit()
             return states, events, manifest
+
+    def build_portfolio_artifacts(
+        self,
+        result: QuantResult,
+        trade_states: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+        run_id = str(result.manifest["run_id"])
+        with sqlite3.connect(self.path) as connection:
+            connection.executescript(SCHEMA)
+            allocations, summary, manifest = calculate_portfolio_snapshot(result, trade_states)
+            connection.execute(
+                """INSERT OR IGNORE INTO local_portfolio_publications
+                   (run_id, methodology_version, expected_allocations,
+                    allocation_payload_hash, summary_hash, summary_json, manifest_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    manifest["methodology_version"],
+                    manifest["expected_allocations"],
+                    manifest["allocation_payload_hash"],
+                    manifest["summary_hash"],
+                    json.dumps(summary, ensure_ascii=False, sort_keys=True),
+                    json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.executemany(
+                """INSERT OR IGNORE INTO local_portfolio_allocations
+                   (run_id, symbol, row_hash, record_json) VALUES (?, ?, ?, ?)""",
+                [
+                    (
+                        run_id,
+                        row["symbol"],
+                        row["row_hash"],
+                        json.dumps(row, ensure_ascii=False, sort_keys=True),
+                    )
+                    for row in allocations
+                ],
+            )
+            stored = connection.execute(
+                """SELECT methodology_version, expected_allocations,
+                          allocation_payload_hash, summary_hash
+                   FROM local_portfolio_publications WHERE run_id = ?""",
+                (run_id,),
+            ).fetchone()
+            expected = (
+                manifest["methodology_version"],
+                manifest["expected_allocations"],
+                manifest["allocation_payload_hash"],
+                manifest["summary_hash"],
+            )
+            if stored != expected:
+                raise RuntimeError("conflicting immutable portfolio publication")
+            for row in allocations:
+                stored_row = connection.execute(
+                    """SELECT row_hash FROM local_portfolio_allocations
+                       WHERE run_id = ? AND symbol = ?""",
+                    (run_id, row["symbol"]),
+                ).fetchone()
+                if not stored_row or stored_row[0] != row["row_hash"]:
+                    raise RuntimeError("conflicting immutable portfolio allocation")
+            connection.commit()
+            return allocations, summary, manifest
 
     @staticmethod
     def _materialize_forward_outcomes(

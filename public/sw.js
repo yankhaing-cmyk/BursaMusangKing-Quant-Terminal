@@ -1,4 +1,4 @@
-const CACHE = "bmk-quant-shell-v4";
+const CACHE = "bmk-quant-shell-v5";
 const SHELL = ["/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

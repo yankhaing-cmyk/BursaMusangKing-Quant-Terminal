@@ -40,6 +40,6 @@ Trade states and events use a separate `trade-v1.0.0` canonical hash contract. D
 - `automatic_execution=false`;
 - all score, regime and trade validations to pass in one promotion.
 
-Any mismatch rejects the candidate run and preserves the prior verified daily snapshot. The browser `Open` view is owner-only and explicitly labelled as a shadow ledger. Position sizing, capital allocation and portfolio risk remain Phase 5.
+Any mismatch rejects the candidate run and preserves the prior verified daily snapshot. The browser `Open` view is owner-only and explicitly labelled as a shadow ledger. Phase 5 consumes these immutable states without changing their entry, stop or exit semantics.
 
 The GitHub history cache is advanced only after the score/regime/trade snapshot is confirmed active. Dry runs and rejected publications cannot become the parent state for a later entry.

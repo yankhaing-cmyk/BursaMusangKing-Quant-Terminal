@@ -4,6 +4,8 @@ import type {
   DataIssue,
   MarketRegime,
   MarketRegimeLabel,
+  PortfolioAllocation,
+  PortfolioSnapshot,
   QuantRow,
   QuantRun,
   RankingQuery,
@@ -476,6 +478,118 @@ export async function getTradeSnapshot(): Promise<TradeSnapshot> {
       stateCounts,
       states: states.results.map(mapTradeState),
       events: events.results.map(mapTradeEvent),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function mapPortfolioAllocation(row: Record<string, unknown>): PortfolioAllocation {
+  return {
+    runId: String(row.run_id),
+    marketDate: String(row.market_date),
+    methodologyVersion: String(row.methodology_version),
+    symbol: String(row.symbol),
+    name: String(row.name),
+    tradeId: String(row.trade_id),
+    tradeState: row.trade_state as PortfolioAllocation["tradeState"],
+    sector: String(row.sector),
+    quantScore: Number(row.quant_score),
+    lastClose: Number(row.last_close),
+    atrPct: Number(row.atr_pct),
+    stopDistancePct: Number(row.stop_distance_pct),
+    averageTradedValue20: Number(row.average_traded_value_20),
+    scoreMultiplier: Number(row.score_multiplier),
+    volatilityMultiplier: Number(row.volatility_multiplier),
+    liquidityMultiplier: Number(row.liquidity_multiplier),
+    correlationMultiplier: Number(row.correlation_multiplier),
+    targetWeight: Number(row.target_weight),
+    riskBudget: Number(row.risk_budget),
+    riskContribution: Number(row.risk_contribution),
+    volatilityContribution: row.volatility_contribution === null ? null : Number(row.volatility_contribution),
+    beta: row.beta === null ? null : Number(row.beta),
+    correlationCluster: String(row.correlation_cluster),
+    sectorCapApplied: Boolean(row.sector_cap_applied),
+    flags: parseJson<string[]>(row.flags_json, []),
+  };
+}
+
+export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
+  const empty: PortfolioSnapshot = {
+    status: "AWAITING_RUN",
+    methodologyVersion: "portfolio-v1.0.0",
+    marketDate: null,
+    regimeLabel: null,
+    automaticExecution: false,
+    maxEquityExposure: 0,
+    minimumCashAllocation: 1,
+    maxPortfolioRisk: 0,
+    positionCap: 0.06,
+    sectorCap: 0.25,
+    correlationThreshold: 0.75,
+    positionCount: 0,
+    capitalDeployed: 0,
+    cashAllocation: 1,
+    portfolioRisk: 0,
+    largestPosition: 0,
+    top5Concentration: 0,
+    portfolioQuantScore: null,
+    portfolioBeta: null,
+    expectedVolatility: null,
+    sectorExposure: {},
+    correlationClusters: {},
+    allocations: [],
+  };
+  const db = await dbBinding();
+  if (!db) return empty;
+  try {
+    const publication = await db
+      .prepare(
+        `SELECT pp.*, qr.market_date FROM app_state state
+         JOIN quant_runs qr ON qr.id = state.value
+         JOIN portfolio_publications pp ON pp.run_id = qr.id
+         WHERE state.key = 'active_run_id' AND qr.status = 'ACTIVE'
+           AND pp.status = 'ACTIVE' AND pp.summary_received = 1
+           AND pp.automatic_execution = 0 LIMIT 1`,
+      )
+      .first<Record<string, unknown>>();
+    if (!publication) return empty;
+    const runId = String(publication.run_id);
+    const allocations = await db
+      .prepare(
+        `SELECT allocation.*, instrument.name
+         FROM portfolio_allocations allocation
+         JOIN instruments instrument ON instrument.symbol = allocation.symbol
+         WHERE allocation.run_id = ?
+         ORDER BY allocation.risk_contribution DESC, allocation.target_weight DESC,
+                  allocation.symbol`,
+      )
+      .bind(runId)
+      .all<Record<string, unknown>>();
+    return {
+      status: "ACTIVE",
+      methodologyVersion: String(publication.methodology_version),
+      marketDate: String(publication.market_date),
+      regimeLabel: publication.regime_label as MarketRegimeLabel,
+      automaticExecution: false,
+      maxEquityExposure: Number(publication.max_equity_exposure),
+      minimumCashAllocation: Number(publication.minimum_cash_allocation),
+      maxPortfolioRisk: Number(publication.max_portfolio_risk),
+      positionCap: Number(publication.position_cap),
+      sectorCap: Number(publication.sector_cap),
+      correlationThreshold: Number(publication.correlation_threshold),
+      positionCount: Number(publication.position_count),
+      capitalDeployed: Number(publication.capital_deployed),
+      cashAllocation: Number(publication.cash_allocation),
+      portfolioRisk: Number(publication.portfolio_risk),
+      largestPosition: Number(publication.largest_position),
+      top5Concentration: Number(publication.top5_concentration),
+      portfolioQuantScore: publication.portfolio_quant_score === null ? null : Number(publication.portfolio_quant_score),
+      portfolioBeta: publication.portfolio_beta === null ? null : Number(publication.portfolio_beta),
+      expectedVolatility: publication.expected_volatility === null ? null : Number(publication.expected_volatility),
+      sectorExposure: parseJson<Record<string, number>>(publication.sector_exposure_json, {}),
+      correlationClusters: parseJson<Record<string, string[]>>(publication.correlation_clusters_json, {}),
+      allocations: allocations.results.map(mapPortfolioAllocation),
     };
   } catch {
     return empty;

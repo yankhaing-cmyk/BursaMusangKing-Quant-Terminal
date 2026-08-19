@@ -39,6 +39,8 @@ class MigrationTests(unittest.TestCase):
                         "trade_publications",
                         "trade_state_snapshots",
                         "trade_events",
+                        "portfolio_publications",
+                        "portfolio_allocations",
                     }
                     <= tables
                 )
@@ -51,6 +53,16 @@ class MigrationTests(unittest.TestCase):
                 self.assertTrue(
                     {"state", "trailing_stop", "expected_edge_20d", "row_hash"}
                     <= trade_columns
+                )
+                portfolio_columns = {
+                    row[1]
+                    for row in connection.execute(
+                        "PRAGMA table_info(portfolio_allocations)"
+                    ).fetchall()
+                }
+                self.assertTrue(
+                    {"target_weight", "risk_contribution", "correlation_cluster", "row_hash"}
+                    <= portfolio_columns
                 )
             finally:
                 connection.close()

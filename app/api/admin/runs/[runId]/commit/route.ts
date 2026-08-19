@@ -11,6 +11,12 @@ import {
   type TradeEventPayload,
   type TradeStatePayload,
 } from "@/app/lib/trade-ingest";
+import {
+  validatePortfolioAllocation,
+  validatePortfolioSummary,
+  type PortfolioAllocationPayload,
+  type PortfolioSummaryPayload,
+} from "@/app/lib/portfolio-ingest";
 
 export async function POST(
   request: Request,
@@ -96,10 +102,51 @@ export async function POST(
     const computedTradeEventHash = await sha256Hex(
       tradeEvents.results.map((row) => `${row.event_id}:${row.row_hash}`).join("\n"),
     );
+    const portfolioPublication = await db
+      .prepare("SELECT * FROM portfolio_publications WHERE run_id = ? LIMIT 1")
+      .bind(runId)
+      .first<Record<string, unknown>>();
+    const portfolioAllocations = await db
+      .prepare("SELECT * FROM portfolio_allocations WHERE run_id = ? ORDER BY symbol")
+      .bind(runId)
+      .all<Record<string, unknown>>();
+    let portfolioValidationError = portfolioPublication ? "" : "missing_portfolio_publication";
+    if (portfolioPublication) {
+      if (portfolioPublication.status !== "PENDING") portfolioValidationError = "portfolio_publication_not_pending";
+      if (!portfolioValidationError && Number(portfolioPublication.summary_received) !== 1) {
+        portfolioValidationError = "portfolio_summary_missing";
+      }
+      if (!portfolioValidationError) {
+        portfolioValidationError = (await validatePortfolioSummary({
+          ...portfolioPublication,
+          market_date: run.market_date,
+          automatic_execution: Number(portfolioPublication.automatic_execution) !== 0,
+          row_hash: portfolioPublication.summary_hash,
+        } as unknown as PortfolioSummaryPayload)) ?? "";
+      }
+      if (!portfolioValidationError) {
+        for (const row of portfolioAllocations.results) {
+          portfolioValidationError = (await validatePortfolioAllocation(row as unknown as PortfolioAllocationPayload)) ?? "";
+          if (portfolioValidationError) break;
+        }
+      }
+    }
+    const computedPortfolioHash = await sha256Hex(
+      portfolioAllocations.results.map((row) => `${row.symbol}:${row.row_hash}`).join("\n"),
+    );
+    const sectorExposure: Record<string, number> = {};
+    for (const row of portfolioAllocations.results) {
+      const sector = String(row.sector);
+      sectorExposure[sector] = (sectorExposure[sector] ?? 0) + Number(row.target_weight);
+    }
+    const computedSectorJson = JSON.stringify(
+      Object.fromEntries(Object.entries(sectorExposure).sort(([left], [right]) => left.localeCompare(right)).map(([sector, value]) => [sector, Number(value.toFixed(8))])),
+    );
     const invalid =
       Number(critical?.count ?? 0) > 0 ||
       Boolean(regimeError) ||
       Boolean(tradeValidationError) ||
+      Boolean(portfolioValidationError) ||
       String(regimeRow?.market_date ?? "") !== String(run.market_date) ||
       received !== expected ||
       computedHash !== String(run.payload_hash) ||
@@ -108,6 +155,11 @@ export async function POST(
       computedTradeStateHash !== String(tradePublication?.state_payload_hash ?? "") ||
       computedTradeEventHash !== String(tradePublication?.event_payload_hash ?? "") ||
       Number(tradePublication?.automatic_execution ?? 1) !== 0 ||
+      portfolioAllocations.results.length !== Number(portfolioPublication?.expected_allocations ?? -1) ||
+      computedPortfolioHash !== String(portfolioPublication?.allocation_payload_hash ?? "") ||
+      computedSectorJson !== String(portfolioPublication?.sector_exposure_json ?? "") ||
+      Number(portfolioPublication?.position_count ?? -1) !== portfolioAllocations.results.length ||
+      Number(portfolioPublication?.automatic_execution ?? 1) !== 0 ||
       String(run.market_date) !== String(run.benchmark_date);
     if (invalid) {
       await db.batch([
@@ -117,6 +169,9 @@ export async function POST(
         db
           .prepare("UPDATE trade_publications SET status = 'REJECTED', received_states = ?, received_events = ? WHERE run_id = ?")
           .bind(tradeStates.results.length, tradeEvents.results.length, runId),
+        db
+          .prepare("UPDATE portfolio_publications SET status = 'REJECTED', received_allocations = ? WHERE run_id = ?")
+          .bind(portfolioAllocations.results.length, runId),
       ]);
       return errorResponse("commit_validation_failed_previous_run_preserved", 422);
     }
@@ -158,6 +213,18 @@ export async function POST(
         .bind(tradeStates.results.length, tradeEvents.results.length, committedAt, runId),
       db
         .prepare(
+          `UPDATE portfolio_publications
+           SET status = 'ACTIVE', received_allocations = ?, committed_at = ?
+           WHERE run_id = ? AND status = 'PENDING'
+             AND EXISTS (
+               SELECT 1 FROM quant_runs promoted
+               WHERE promoted.id = portfolio_publications.run_id
+                 AND promoted.status = 'ACTIVE'
+             )`,
+        )
+        .bind(portfolioAllocations.results.length, committedAt, runId),
+      db
+        .prepare(
           `UPDATE quant_runs
            SET status = 'SUPERSEDED'
            WHERE status = 'ACTIVE' AND id <> ?
@@ -184,17 +251,19 @@ export async function POST(
     const promoted = await db
       .prepare(
         `SELECT qr.status, state.value AS active_run_id,
-                trades.status AS trade_status
+                trades.status AS trade_status,
+                portfolio.status AS portfolio_status
          FROM quant_runs qr
          LEFT JOIN app_state state ON state.key = 'active_run_id'
          LEFT JOIN trade_publications trades ON trades.run_id = qr.id
+         LEFT JOIN portfolio_publications portfolio ON portfolio.run_id = qr.id
          WHERE qr.id = ? LIMIT 1`,
       )
       .bind(runId)
-      .first<{ status: string; active_run_id: string | null; trade_status: string | null }>();
+      .first<{ status: string; active_run_id: string | null; trade_status: string | null; portfolio_status: string | null }>();
     if (
       promoted?.status !== "ACTIVE" || promoted.active_run_id !== runId ||
-      promoted.trade_status !== "ACTIVE"
+      promoted.trade_status !== "ACTIVE" || promoted.portfolio_status !== "ACTIVE"
     ) {
       return errorResponse("newer_or_conflicting_run_already_active", 409);
     }
@@ -207,6 +276,7 @@ export async function POST(
       payload_hash: computedHash,
       trade_states: tradeStates.results.length,
       trade_events: tradeEvents.results.length,
+      portfolio_allocations: portfolioAllocations.results.length,
     });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "invalid_request");

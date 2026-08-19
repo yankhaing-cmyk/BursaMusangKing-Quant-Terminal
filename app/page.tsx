@@ -4,6 +4,7 @@ import { chatGPTSignOutPath } from "@/app/chatgpt-auth";
 import { requireOwnerPage } from "@/app/lib/owner-auth";
 import {
   getDashboardSnapshot,
+  getPortfolioSnapshot,
   getResearchSnapshot,
   getTradeSnapshot,
 } from "@/app/lib/repository";
@@ -24,10 +25,11 @@ export default async function Home() {
       </main>
     );
   }
-  const [snapshot, research, trades] = await Promise.all([
+  const [snapshot, research, trades, portfolio] = await Promise.all([
     getDashboardSnapshot({ page: 1, pageSize: 100 }),
     getResearchSnapshot(),
     getTradeSnapshot(),
+    getPortfolioSnapshot(),
   ]);
   return (
     <>
@@ -35,6 +37,7 @@ export default async function Home() {
         initialSnapshot={snapshot}
         initialResearch={research}
         initialTrades={trades}
+        initialPortfolio={portfolio}
       />
       <PwaRegister />
     </>

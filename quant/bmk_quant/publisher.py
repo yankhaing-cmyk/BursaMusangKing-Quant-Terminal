@@ -108,6 +108,14 @@ class QuantPublisher:
         ):
             raise PublishError("trade artifact counts do not match the manifest")
 
+        portfolio_manifest = manifest.get("portfolio")
+        if not isinstance(portfolio_manifest, dict):
+            raise PublishError("portfolio manifest is missing")
+        portfolio_allocations = _read_json_lines(directory / "portfolio-allocations.jsonl")
+        portfolio_summary = json.loads((directory / "portfolio-summary.json").read_text(encoding="utf-8"))
+        if len(portfolio_allocations) != int(portfolio_manifest.get("expected_allocations", -1)):
+            raise PublishError("portfolio allocation count does not match the manifest")
+
         start = self._post("/api/admin/runs/start", manifest)
         run_id = str(manifest["run_id"])
         quant_result = start
@@ -127,6 +135,15 @@ class QuantPublisher:
                 self._post(
                     f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/trades",
                     {"states": [], "events": batch},
+                )
+            self._post(
+                f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/portfolio",
+                {"summary": portfolio_summary, "allocations": []},
+            )
+            for batch in _chunks(portfolio_allocations, 40):
+                self._post(
+                    f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/portfolio",
+                    {"summary": None, "allocations": batch},
                 )
             quant_result = self._post(
                 f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/commit",

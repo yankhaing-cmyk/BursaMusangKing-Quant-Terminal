@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
   DashboardSnapshot,
+  PortfolioSnapshot,
   QuantRow,
   RankingQuery,
   ResearchSnapshot,
@@ -10,7 +11,7 @@ import type {
   TradeState,
 } from "@/app/lib/types";
 
-type Tab = "today" | "ranking" | "open" | "regime" | "research" | "health";
+type Tab = "today" | "ranking" | "open" | "portfolio" | "regime" | "research" | "health";
 type Sort = NonNullable<RankingQuery["sort"]>;
 
 const RUN_GATEWAY_URL = "https://bursa-quant-run-gateway.yankhaing.workers.dev/run";
@@ -378,6 +379,109 @@ function OpenView({ trades }: { trades: TradeSnapshot }) {
   );
 }
 
+function PortfolioView({ portfolio }: { portfolio: PortfolioSnapshot }) {
+  if (portfolio.status !== "ACTIVE") {
+    return (
+      <div className="view-stack">
+        <section className="research-hero portfolio-empty">
+          <div>
+            <p className="section-kicker">PHASE 5 · PORTFOLIO QUANT</p>
+            <h2>Awaiting the next verified screening run</h2>
+            <p className="muted">
+              The older active snapshot has no Phase 5 allocation payload. The terminal will not infer
+              position sizes, portfolio risk or concentration from incomplete data.
+            </p>
+          </div>
+          <span className="research-state">FAIL CLOSED</span>
+        </section>
+      </div>
+    );
+  }
+  const sectors = Object.entries(portfolio.sectorExposure).sort((left, right) => right[1] - left[1]);
+  const clusters = Object.entries(portfolio.correlationClusters).filter(([, symbols]) => symbols.length > 1);
+  return (
+    <div className="view-stack">
+      <section className="portfolio-hero">
+        <div>
+          <p className="section-kicker">PHASE 5 · PORTFOLIO QUANT</p>
+          <h2>Normalized shadow allocation</h2>
+          <p className="muted">
+            Target weights are ATR-risk sized, liquidity scaled, correlation aware and capped by the active market regime.
+          </p>
+        </div>
+        <span className={`research-state ${portfolio.regimeLabel ? regimeTone(portfolio.regimeLabel) : ""}`}>
+          {portfolio.regimeLabel}
+        </span>
+      </section>
+
+      <section className="metric-grid" aria-label="Portfolio allocation overview">
+        <article className="metric-card"><span>DEPLOYED</span><strong>{formatPercent(portfolio.capitalDeployed)}</strong><small>Cap {formatPercent(portfolio.maxEquityExposure)}</small></article>
+        <article className="metric-card"><span>CASH</span><strong>{formatPercent(portfolio.cashAllocation)}</strong><small>Floor {formatPercent(portfolio.minimumCashAllocation)}</small></article>
+        <article className="metric-card"><span>STOP RISK</span><strong>{formatPercent(portfolio.portfolioRisk)}</strong><small>Limit {formatPercent(portfolio.maxPortfolioRisk)}</small></article>
+        <article className="metric-card"><span>PORTFOLIO SCORE</span><strong>{portfolio.portfolioQuantScore?.toFixed(1) ?? "—"}</strong><small>{portfolio.positionCount} shadow positions</small></article>
+      </section>
+
+      <section className="metric-grid portfolio-secondary-metrics" aria-label="Portfolio diagnostics">
+        <article className="metric-card"><span>EXPECTED VOL</span><strong>{formatPercent(portfolio.expectedVolatility)}</strong><small>60D annualised</small></article>
+        <article className="metric-card"><span>PORTFOLIO BETA</span><strong>{portfolio.portfolioBeta?.toFixed(2) ?? "—"}</strong><small>Versus FBM KLCI</small></article>
+        <article className="metric-card"><span>LARGEST</span><strong>{formatPercent(portfolio.largestPosition)}</strong><small>Cap {formatPercent(portfolio.positionCap)}</small></article>
+        <article className="metric-card"><span>TOP 5</span><strong>{formatPercent(portfolio.top5Concentration)}</strong><small>Concentration</small></article>
+      </section>
+
+      <section className="panel portfolio-ledger-panel">
+        <div className="panel-heading">
+          <div><p className="section-kicker">RISK-FIRST ALLOCATION</p><h2>Recommended portfolio weights</h2></div>
+          <span className="panel-meta">{portfolio.marketDate}</span>
+        </div>
+        {portfolio.allocations.length ? (
+          <div className="portfolio-card-list">
+            {portfolio.allocations.map((row) => (
+              <article className={`portfolio-card ${tradeTone(row.tradeState)}`} key={row.symbol}>
+                <div className="portfolio-card-heading">
+                  <span className={`trade-state-pill ${tradeTone(row.tradeState)}`}>{row.tradeState.replaceAll("_", " ")}</span>
+                  <div><strong>{row.symbol}</strong><small>{row.name} · {row.sector}</small></div>
+                  <strong className="portfolio-weight">{formatPercent(row.targetWeight)}</strong>
+                </div>
+                <div className="portfolio-card-grid">
+                  <div><span>Stop risk</span><strong>{formatPercent(row.riskContribution)}</strong></div>
+                  <div><span>Stop distance</span><strong>{formatPercent(row.stopDistancePct)}</strong></div>
+                  <div><span>ATR%</span><strong>{formatPercent(row.atrPct)}</strong></div>
+                  <div><span>Quant Score</span><strong>{row.quantScore.toFixed(1)}</strong></div>
+                  <div><span>Beta</span><strong>{row.beta?.toFixed(2) ?? "—"}</strong></div>
+                  <div><span>Cluster</span><strong>{row.correlationCluster}</strong></div>
+                </div>
+                <div className="flag-row">
+                  {row.flags.length ? row.flags.map((flag) => <span key={flag}>{flag.replaceAll("_", " ")}</span>) : <span className="clear-flag">NO SIZING PENALTY</span>}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : <p className="empty-copy">No active shadow trades. Target allocation remains 100% cash.</p>}
+      </section>
+
+      <section className="two-column">
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">SECTOR CONCENTRATION</p><h2>Capital by sector</h2></div><span className="phase-pill">CAP {formatPercent(portfolio.sectorCap)}</span></div>
+          <div className="exposure-list">
+            {sectors.map(([sector, weight]) => (
+              <div key={sector}><span><strong>{sector}</strong><small>{formatPercent(weight)}</small></span><span className="exposure-track"><span style={{ width: `${Math.min(100, weight / portfolio.sectorCap * 100)}%` }} /></span></div>
+            ))}
+            {!sectors.length && <p className="empty-copy">No sector exposure.</p>}
+          </div>
+        </article>
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">CORRELATION CLUSTERS</p><h2>Hidden concentration</h2></div><span className="phase-pill">≥{Math.round(portfolio.correlationThreshold * 100)}%</span></div>
+          <div className="cluster-list">
+            {clusters.map(([cluster, symbols]) => <div key={cluster}><strong>{cluster}</strong><span>{symbols.join(" · ")}</span></div>)}
+            {!clusters.length && <p className="empty-copy">No multi-stock high-correlation cluster.</p>}
+          </div>
+          <p className="portfolio-footnote">Recommendations are normalized percentages, not orders. Automatic execution remains OFF.</p>
+        </article>
+      </section>
+    </div>
+  );
+}
+
 function RegimeView({ snapshot }: { snapshot: DashboardSnapshot }) {
   const regime = snapshot.marketRegime;
   const live = snapshot.mode === "LIVE";
@@ -607,7 +711,7 @@ function RankingView({
   );
 }
 
-function HealthView({ snapshot, trades }: { snapshot: DashboardSnapshot; trades: TradeSnapshot }) {
+function HealthView({ snapshot, trades, portfolio }: { snapshot: DashboardSnapshot; trades: TradeSnapshot; portfolio: PortfolioSnapshot }) {
   const live = snapshot.mode === "LIVE";
   const hash = snapshot.run.payloadHash;
   const rows = [
@@ -621,6 +725,8 @@ function HealthView({ snapshot, trades }: { snapshot: DashboardSnapshot; trades:
     ["Trade methodology", trades.methodologyVersion, ""],
     ["Trade publication", trades.status, trades.status === "ACTIVE" ? "good-text" : ""],
     ["Automatic execution", "OFF", "good-text"],
+    ["Portfolio methodology", portfolio.methodologyVersion, ""],
+    ["Portfolio publication", portfolio.status, portfolio.status === "ACTIVE" ? "good-text" : ""],
     ["Last successful run", snapshot.run.committedAt ?? "None", ""],
     ["Payload hash", hash ? `${hash.slice(0, 12)}…${hash.slice(-8)}` : "None", "mono"],
   ];
@@ -834,7 +940,7 @@ function Inspector({ row, onClose, demo }: { row: QuantRow; onClose: () => void;
           <p>{row.historyDays} trading bars · Sector RS {row.sectorRsAvailable ? "available" : "unavailable"}</p>
           <div className="flag-row">{row.qualityFlags.length ? row.qualityFlags.map((flag) => <span key={flag}>{flag.replaceAll("_", " ")}</span>) : <span className="clear-flag">NO QUALITY FLAGS</span>}</div>
         </div>
-        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Phase 4 trade states are shadow records only; expected edge stays hidden below the minimum sample and position sizing remains Phase 5.</p>
+        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Phase 4 trade states and Phase 5 portfolio weights are shadow research records only; automatic execution remains OFF.</p>
       </aside>
     </div>
   );
@@ -844,10 +950,12 @@ export function QuantTerminal({
   initialSnapshot,
   initialResearch,
   initialTrades,
+  initialPortfolio,
 }: {
   initialSnapshot: DashboardSnapshot;
   initialResearch: ResearchSnapshot;
   initialTrades: TradeSnapshot;
+  initialPortfolio: PortfolioSnapshot;
 }) {
   const [tab, setTab] = useState<Tab>("today");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -975,14 +1083,16 @@ export function QuantTerminal({
         {tab === "today" && <TodayView snapshot={snapshot} trades={initialTrades} onInspect={setSelected} />}
         {tab === "ranking" && <RankingView snapshot={snapshot} onInspect={setSelected} query={query} setQuery={setQuery} page={page} setPage={setPage} loading={loading} />}
         {tab === "open" && <OpenView trades={initialTrades} />}
+        {tab === "portfolio" && <PortfolioView portfolio={initialPortfolio} />}
         {tab === "regime" && <RegimeView snapshot={snapshot} />}
         {tab === "research" && <ResearchView research={initialResearch} />}
-        {tab === "health" && <HealthView snapshot={snapshot} trades={initialTrades} />}
+        {tab === "health" && <HealthView snapshot={snapshot} trades={initialTrades} portfolio={initialPortfolio} />}
       </main>
       <nav className="bottom-nav" aria-label="Primary navigation">
         <button type="button" className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}><span aria-hidden="true">◫</span><strong>Today</strong></button>
         <button type="button" className={tab === "ranking" ? "active" : ""} onClick={() => setTab("ranking")}><span aria-hidden="true">≡</span><strong>Ranking</strong></button>
         <button type="button" className={tab === "open" ? "active" : ""} onClick={() => setTab("open")}><span aria-hidden="true">◆</span><strong>Open</strong></button>
+        <button type="button" className={tab === "portfolio" ? "active" : ""} onClick={() => setTab("portfolio")}><span aria-hidden="true">▦</span><strong>Portfolio</strong></button>
         <button type="button" className={tab === "regime" ? "active" : ""} onClick={() => setTab("regime")}><span aria-hidden="true">◉</span><strong>Regime</strong></button>
         <button type="button" className={tab === "research" ? "active" : ""} onClick={() => setTab("research")}><span aria-hidden="true">∿</span><strong>Research</strong></button>
         <button type="button" className={tab === "health" ? "active" : ""} onClick={() => setTab("health")}><span aria-hidden="true">◇</span><strong>Health</strong></button>

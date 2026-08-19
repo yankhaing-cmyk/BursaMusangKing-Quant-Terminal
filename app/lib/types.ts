@@ -214,3 +214,57 @@ export type TradeSnapshot = {
   states: TradeState[];
   events: TradeEvent[];
 };
+
+export type PortfolioAllocation = {
+  runId: string;
+  marketDate: string;
+  methodologyVersion: string;
+  symbol: string;
+  name: string;
+  tradeId: string;
+  tradeState: Extract<TradeStateName, "BUY_PENDING" | "OPEN" | "NEAR_SELL">;
+  sector: string;
+  quantScore: number;
+  lastClose: number;
+  atrPct: number;
+  stopDistancePct: number;
+  averageTradedValue20: number;
+  scoreMultiplier: number;
+  volatilityMultiplier: number;
+  liquidityMultiplier: number;
+  correlationMultiplier: number;
+  targetWeight: number;
+  riskBudget: number;
+  riskContribution: number;
+  volatilityContribution: number | null;
+  beta: number | null;
+  correlationCluster: string;
+  sectorCapApplied: boolean;
+  flags: string[];
+};
+
+export type PortfolioSnapshot = {
+  status: "ACTIVE" | "AWAITING_RUN";
+  methodologyVersion: string;
+  marketDate: string | null;
+  regimeLabel: MarketRegimeLabel | null;
+  automaticExecution: false;
+  maxEquityExposure: number;
+  minimumCashAllocation: number;
+  maxPortfolioRisk: number;
+  positionCap: number;
+  sectorCap: number;
+  correlationThreshold: number;
+  positionCount: number;
+  capitalDeployed: number;
+  cashAllocation: number;
+  portfolioRisk: number;
+  largestPosition: number;
+  top5Concentration: number;
+  portfolioQuantScore: number | null;
+  portfolioBeta: number | null;
+  expectedVolatility: number | null;
+  sectorExposure: Record<string, number>;
+  correlationClusters: Record<string, string[]>;
+  allocations: PortfolioAllocation[];
+};
