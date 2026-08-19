@@ -58,6 +58,40 @@ body {
   min-height: 100vh;
 }
 
+.access-denied-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.access-denied-card {
+  width: min(100%, 520px);
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.access-denied-card h1 {
+  margin: 8px 0 12px;
+  font-size: clamp(1.7rem, 5vw, 2.5rem);
+}
+
+.access-denied-card p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.access-denied-card a {
+  display: inline-block;
+  margin-top: 18px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 button,
 input,
 select {
@@ -334,7 +368,8 @@ select:focus-visible {
 
 .status-hero,
 .ranking-header,
-.health-hero {
+.health-hero,
+.research-hero {
   align-items: center;
   background:
     linear-gradient(120deg, var(--surface), color-mix(in srgb, var(--surface) 75%, var(--accent-soft)));
@@ -346,6 +381,36 @@ select:focus-visible {
   overflow: hidden;
   padding: 20px;
   position: relative;
+}
+
+.research-hero {
+  align-items: center;
+  background:
+    linear-gradient(120deg, var(--surface), color-mix(in srgb, var(--surface) 78%, var(--green-soft)));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 112px;
+  padding: 20px;
+}
+
+.research-hero h2 {
+  font-size: 19px;
+  letter-spacing: -0.025em;
+  margin: 7px 0 6px;
+}
+
+.research-state {
+  background: var(--green-soft);
+  border: 1px solid color-mix(in srgb, var(--green) 42%, var(--line));
+  border-radius: 6px;
+  color: var(--green);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 7px 9px;
+  white-space: nowrap;
 }
 
 .status-hero::after {
@@ -950,6 +1015,94 @@ select:focus-visible {
   min-height: 42px;
 }
 
+.research-panel {
+  overflow: hidden;
+}
+
+.research-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 680px;
+  overflow: hidden;
+}
+
+.research-panel:has(.research-table) {
+  overflow-x: auto;
+}
+
+.research-row {
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 92px repeat(4, minmax(125px, 1fr));
+}
+
+.research-row:last-child {
+  border-bottom: 0;
+}
+
+.research-row > strong,
+.research-row > span {
+  align-items: center;
+  border-right: 1px solid var(--line);
+  display: flex;
+  justify-content: center;
+  min-height: 53px;
+  padding: 7px;
+}
+
+.research-row > :last-child {
+  border-right: 0;
+}
+
+.research-row > strong {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.research-header {
+  background: var(--surface-2);
+}
+
+.research-header > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  min-height: 34px;
+}
+
+.research-cell {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.research-cell strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.research-cell small {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.research-cell.collecting strong {
+  color: var(--faint);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.research-cell.provisional {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.research-cell.established {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .unchecked {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
@@ -1254,7 +1407,8 @@ select:focus-visible {
 
   .status-hero,
   .ranking-header,
-  .health-hero {
+  .health-hero,
+  .research-hero {
     min-height: 105px;
     padding: 15px;
   }
@@ -1264,6 +1418,27 @@ select:focus-visible {
   .ranking-header h2,
   .health-hero h2 {
     font-size: 16px;
+  }
+
+  .research-hero h2 {
+    font-size: 16px;
+  }
+
+  .research-hero {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .research-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .research-panel {
+    padding-bottom: 10px;
+  }
+
+  .research-table {
+    min-width: 620px;
   }
 
   .muted {

@@ -15,6 +15,13 @@
       "when": 1787010125881,
       "tag": "0001_classy_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787133037584,
+      "tag": "0002_red_callisto",
+      "breakpoints": true
     }
   ]
 }

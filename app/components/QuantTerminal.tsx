@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardSnapshot, QuantRow, RankingQuery } from "@/app/lib/types";
+import type {
+  DashboardSnapshot,
+  QuantRow,
+  RankingQuery,
+  ResearchSnapshot,
+} from "@/app/lib/types";
 
-type Tab = "today" | "ranking" | "health";
+type Tab = "today" | "ranking" | "research" | "health";
 type Sort = NonNullable<RankingQuery["sort"]>;
+
+const RUN_GATEWAY_URL = "https://bursa-quant-run-gateway.yankhaing.workers.dev/run";
+const RUN_KEY_STORAGE = "bmk-quant-manual-run-key";
 
 const scoreFields: Array<[keyof QuantRow, string, string]> = [
   ["trendScore", "Trend", "20%"],
@@ -223,13 +231,13 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
         <article className="panel compact-panel">
           <div className="panel-heading">
             <div>
-              <p className="section-kicker">NEXT RESEARCH LAYER</p>
+              <p className="section-kicker">PHASE 2 RESEARCH</p>
               <h2>Expected edge</h2>
             </div>
             <span className="phase-pill">PHASE 2</span>
           </div>
           <p className="empty-copy">
-            Forward 5D, 10D, 20D and 60D outcomes stay hidden until score history and sample sizes are sufficient.
+            The forward-outcome collector is active. Estimates remain hidden until each score bucket has a sufficient real sample.
           </p>
         </article>
       </section>
@@ -440,6 +448,101 @@ function HealthView({ snapshot }: { snapshot: DashboardSnapshot }) {
   );
 }
 
+const researchBuckets = ["95-100", "90-94", "85-89", "80-84", "70-79", "60-69", "50-59", "0-49"];
+const researchHorizons = [5, 10, 20, 60];
+
+function ResearchView({ research }: { research: ResearchSnapshot }) {
+  const statistic = (bucket: string, horizon: number) =>
+    research.statistics.find(
+      (row) => row.scoreBucket === bucket && row.horizon === horizon,
+    );
+  const established = research.statistics.filter(
+    (row) => row.sampleSize >= research.establishedSample,
+  ).length;
+  const provisional = research.statistics.filter(
+    (row) =>
+      row.sampleSize >= research.minimumSample &&
+      row.sampleSize < research.establishedSample,
+  ).length;
+  return (
+    <div className="view-stack">
+      <section className="research-hero">
+        <div>
+          <p className="section-kicker">PHASE 2 · EXPECTED EDGE</p>
+          <h2>{research.observationCount ? "Forward outcomes are accumulating" : "Research collection is active"}</h2>
+          <p className="muted">
+            Next-session open to the 5D, 10D, 20D and 60D closing price. Price return only; dividends are excluded.
+          </p>
+        </div>
+        <span className="research-state">{research.observationCount ? "COLLECTING" : "AWAITING 5D"}</span>
+      </section>
+
+      <section className="metric-grid research-metrics" aria-label="Research collection overview">
+        <article className="metric-card"><span>SCORE DATES</span><strong>{research.scoreDates}</strong><small>Immutable daily snapshots</small></article>
+        <article className="metric-card"><span>OBSERVATIONS</span><strong>{research.observationCount.toLocaleString()}</strong><small>Matured symbol-horizons</small></article>
+        <article className="metric-card"><span>PROVISIONAL CELLS</span><strong>{provisional}</strong><small>Sample size 30–99</small></article>
+        <article className="metric-card"><span>ESTABLISHED CELLS</span><strong>{established}</strong><small>Sample size ≥100</small></article>
+      </section>
+
+      <section className="panel research-panel">
+        <div className="panel-heading">
+          <div><p className="section-kicker">SCORE-BUCKET MATRIX</p><h2>Historical forward outcomes</h2></div>
+          <span className="phase-pill">NO ML</span>
+        </div>
+        <div className="research-table" role="table" aria-label="Quant score forward outcome statistics">
+          <div className="research-row research-header" role="row">
+            <span role="columnheader">SCORE</span>
+            {researchHorizons.map((horizon) => <span role="columnheader" key={horizon}>{horizon}D</span>)}
+          </div>
+          {researchBuckets.map((bucket) => (
+            <div className="research-row" role="row" key={bucket}>
+              <strong role="rowheader">{bucket}</strong>
+              {researchHorizons.map((horizon) => {
+                const row = statistic(bucket, horizon);
+                if (!row || row.sampleSize < research.minimumSample) {
+                  return (
+                    <span className="research-cell collecting" role="cell" key={horizon}>
+                      <strong>COLLECTING</strong><small>n={row?.sampleSize ?? 0}</small>
+                    </span>
+                  );
+                }
+                const tone = row.sampleSize >= research.establishedSample ? "established" : "provisional";
+                return (
+                  <span className={`research-cell ${tone}`} role="cell" key={horizon}>
+                    <strong>{formatPercent(row.averageReturn)}</strong>
+                    <small>{(row.winRate * 100).toFixed(0)}% win · n={row.sampleSize}</small>
+                  </span>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="two-column">
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">CONFIDENCE POLICY</p><h2>Evidence before estimates</h2></div></div>
+          <div className="guard-list">
+            <div><span>Hidden estimate</span><strong>n &lt; 30</strong></div>
+            <div><span>Provisional</span><strong>n = 30–99</strong></div>
+            <div><span>Established</span><strong>n ≥ 100</strong></div>
+            <div><span>Confidence interval</span><strong>95%</strong></div>
+          </div>
+        </article>
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">METHODOLOGY</p><h2>Point-in-time controls</h2></div></div>
+          <div className="guard-list">
+            <div><span>Entry basis</span><strong>Next session open</strong></div>
+            <div><span>MAE / MFE</span><strong>Intraperiod low / high</strong></div>
+            <div><span>Outcome mutation</span><strong className="negative">BLOCKED</strong></div>
+            <div><span>Version</span><strong>{research.methodologyVersion}</strong></div>
+          </div>
+        </article>
+      </section>
+    </div>
+  );
+}
+
 function Inspector({ row, onClose, demo }: { row: QuantRow; onClose: () => void; demo: boolean }) {
   return (
     <div className="drawer-backdrop" role="presentation" onMouseDown={onClose}>
@@ -479,13 +582,19 @@ function Inspector({ row, onClose, demo }: { row: QuantRow; onClose: () => void;
           <p>{row.historyDays} trading bars · Sector RS {row.sectorRsAvailable ? "available" : "unavailable"}</p>
           <div className="flag-row">{row.qualityFlags.length ? row.qualityFlags.map((flag) => <span key={flag}>{flag.replaceAll("_", " ")}</span>) : <span className="clear-flag">NO QUALITY FLAGS</span>}</div>
         </div>
-        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Expected-edge and position-sizing evidence are intentionally withheld until later validated phases.</p>
+        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Expected edge stays hidden until Phase 2 reaches its stated sample threshold; position sizing remains a later phase.</p>
       </aside>
     </div>
   );
 }
 
-export function QuantTerminal({ initialSnapshot }: { initialSnapshot: DashboardSnapshot }) {
+export function QuantTerminal({
+  initialSnapshot,
+  initialResearch,
+}: {
+  initialSnapshot: DashboardSnapshot;
+  initialResearch: ResearchSnapshot;
+}) {
   const [tab, setTab] = useState<Tab>("today");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [selected, setSelected] = useState<QuantRow | null>(null);
@@ -539,27 +648,57 @@ export function QuantTerminal({ initialSnapshot }: { initialSnapshot: DashboardS
 
   const startScreening = async () => {
     if (runState === "queuing") return;
+
+    let runKey = window.localStorage.getItem(RUN_KEY_STORAGE)?.trim() ?? "";
+    if (!runKey) {
+      runKey = window.prompt(
+        "Enter the Manual Run Key saved in your Cloudflare Worker. It stays only on this device.",
+      )?.trim() ?? "";
+      if (!runKey) {
+        setRunNotice({ tone: "error", message: "Screening cancelled: Manual Run Key is required." });
+        return;
+      }
+      window.localStorage.setItem(RUN_KEY_STORAGE, runKey);
+    }
+
     setRunState("queuing");
-    setRunNotice({ tone: "good", message: "Requesting a full Bursa shadow screening…" });
+    setRunNotice({ tone: "good", message: "Requesting a full Bursa screening and verified publication…" });
     try {
-      const response = await fetch("/api/run", {
+      const response = await fetch(RUN_GATEWAY_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Run-Key": runKey,
+        },
         body: "{}",
       });
-      const result = (await response.json()) as { message?: string };
+      const result = (await response.json()) as {
+        error?: string;
+        message?: string;
+        retryAfterSeconds?: number;
+      };
       if (!response.ok) {
+        if (response.status === 401) {
+          window.localStorage.removeItem(RUN_KEY_STORAGE);
+        }
         setRunState("idle");
         setRunNotice({
           tone: "error",
-          message: result.message ?? "Screening could not be started.",
+          message:
+            response.status === 401
+              ? "Manual Run Key rejected. Tap Run and enter it again."
+              : response.status === 429
+                ? `A screening was recently requested. Try again in ${result.retryAfterSeconds ?? 300} seconds.`
+                : result.message ?? "Screening could not be started.",
         });
         return;
       }
       setRunState("queued");
       setRunNotice({
         tone: "good",
-        message: result.message ?? "Full Bursa screening queued.",
+        message:
+          result.message ??
+          "Full Bursa screening queued; verified scores will update the private terminal.",
       });
       window.setTimeout(() => setRunState("idle"), 8000);
     } catch {
@@ -581,11 +720,13 @@ export function QuantTerminal({ initialSnapshot }: { initialSnapshot: DashboardS
       <main className="terminal-main">
         {tab === "today" && <TodayView snapshot={snapshot} onInspect={setSelected} />}
         {tab === "ranking" && <RankingView snapshot={snapshot} onInspect={setSelected} query={query} setQuery={setQuery} page={page} setPage={setPage} loading={loading} />}
+        {tab === "research" && <ResearchView research={initialResearch} />}
         {tab === "health" && <HealthView snapshot={snapshot} />}
       </main>
       <nav className="bottom-nav" aria-label="Primary navigation">
         <button type="button" className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}><span aria-hidden="true">◫</span><strong>Today</strong></button>
         <button type="button" className={tab === "ranking" ? "active" : ""} onClick={() => setTab("ranking")}><span aria-hidden="true">≡</span><strong>Ranking</strong></button>
+        <button type="button" className={tab === "research" ? "active" : ""} onClick={() => setTab("research")}><span aria-hidden="true">∿</span><strong>Research</strong></button>
         <button type="button" className={tab === "health" ? "active" : ""} onClick={() => setTab("health")}><span aria-hidden="true">◇</span><strong>Health</strong></button>
       </nav>
       {selected && <Inspector row={selected} onClose={() => setSelected(null)} demo={snapshot.mode !== "LIVE"} />}

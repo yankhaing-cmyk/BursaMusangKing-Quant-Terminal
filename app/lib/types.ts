@@ -74,3 +74,32 @@ export type RankingQuery = {
   page?: number;
   pageSize?: number;
 };
+
+export type ResearchBucketStatistic = {
+  scoreBucket: string;
+  horizon: number;
+  sampleSize: number;
+  averageReturn: number;
+  medianReturn: number;
+  winRate: number;
+  averageMae: number;
+  averageMfe: number;
+  standardError: number | null;
+  confidenceLow: number | null;
+  confidenceHigh: number | null;
+  profitFactor: number | null;
+  firstSignalDate: string;
+  lastExitDate: string;
+  updatedAt: string;
+};
+
+export type ResearchSnapshot = {
+  methodologyVersion: string;
+  scoreDates: number;
+  observationCount: number;
+  latestResearchRunId: string | null;
+  latestResearchAt: string | null;
+  minimumSample: number;
+  establishedSample: number;
+  statistics: ResearchBucketStatistic[];
+};

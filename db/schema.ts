@@ -149,3 +149,78 @@ export const appState = sqliteTable("app_state", {
   value: text("value").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const researchPublications = sqliteTable(
+  "research_publications",
+  {
+    computedRunId: text("computed_run_id")
+      .primaryKey()
+      .references(() => quantRuns.id),
+    status: text("status", {
+      enum: ["PENDING", "ACTIVE", "REJECTED", "SUPERSEDED"],
+    })
+      .notNull()
+      .default("PENDING"),
+    methodologyVersion: text("methodology_version").notNull(),
+    expectedObservations: integer("expected_observations").notNull(),
+    receivedObservations: integer("received_observations").notNull().default(0),
+    payloadHash: text("payload_hash").notNull(),
+    startedAt: text("started_at").notNull(),
+    committedAt: text("committed_at"),
+  },
+  (table) => [index("research_publications_status_idx").on(table.status)],
+);
+
+export const forwardOutcomes = sqliteTable(
+  "forward_outcomes",
+  {
+    signalRunId: text("signal_run_id").notNull().references(() => quantRuns.id),
+    symbol: text("symbol").notNull(),
+    signalDate: text("signal_date").notNull(),
+    scoreBucket: text("score_bucket").notNull(),
+    horizon: integer("horizon").notNull(),
+    entryDate: text("entry_date").notNull(),
+    exitDate: text("exit_date").notNull(),
+    quantScore: real("quant_score").notNull(),
+    entryOpen: real("entry_open").notNull(),
+    exitClose: real("exit_close").notNull(),
+    signalClose: real("signal_close").notNull(),
+    forwardReturn: real("forward_return").notNull(),
+    signalCloseReturn: real("signal_close_return").notNull(),
+    mae: real("mae").notNull(),
+    mfe: real("mfe").notNull(),
+    computedRunId: text("computed_run_id")
+      .notNull()
+      .references(() => researchPublications.computedRunId),
+    methodologyVersion: text("methodology_version").notNull(),
+    observationHash: text("observation_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.signalRunId, table.symbol, table.horizon] }),
+    index("forward_outcomes_bucket_horizon_idx").on(table.scoreBucket, table.horizon),
+    index("forward_outcomes_computed_run_idx").on(table.computedRunId),
+  ],
+);
+
+export const researchBucketStats = sqliteTable(
+  "research_bucket_stats",
+  {
+    scoreBucket: text("score_bucket").notNull(),
+    horizon: integer("horizon").notNull(),
+    sampleSize: integer("sample_size").notNull(),
+    averageReturn: real("average_return").notNull(),
+    medianReturn: real("median_return").notNull(),
+    winRate: real("win_rate").notNull(),
+    averageMae: real("average_mae").notNull(),
+    averageMfe: real("average_mfe").notNull(),
+    standardError: real("standard_error"),
+    confidenceLow: real("confidence_low"),
+    confidenceHigh: real("confidence_high"),
+    profitFactor: real("profit_factor"),
+    firstSignalDate: text("first_signal_date").notNull(),
+    lastExitDate: text("last_exit_date").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.scoreBucket, table.horizon] })],
+);

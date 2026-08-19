@@ -5,7 +5,9 @@ import type {
   QuantRow,
   QuantRun,
   RankingQuery,
+  ResearchSnapshot,
 } from "./types";
+import { RESEARCH_METHODOLOGY } from "./research-ingest";
 
 type RuntimeEnv = { DB?: D1Database };
 
@@ -205,5 +207,72 @@ export async function getStock(symbol: string): Promise<QuantRow | null> {
     return row ? mapRow(row) : null;
   } catch {
     return null;
+  }
+}
+
+export async function getResearchSnapshot(): Promise<ResearchSnapshot> {
+  const empty: ResearchSnapshot = {
+    methodologyVersion: RESEARCH_METHODOLOGY,
+    scoreDates: 0,
+    observationCount: 0,
+    latestResearchRunId: null,
+    latestResearchAt: null,
+    minimumSample: 30,
+    establishedSample: 100,
+    statistics: [],
+  };
+  const db = await dbBinding();
+  if (!db) return empty;
+  try {
+    const [runs, observations, active, statistics] = await Promise.all([
+      db
+        .prepare("SELECT COUNT(*) AS count FROM quant_runs WHERE status IN ('ACTIVE', 'SUPERSEDED')")
+        .first<{ count: number }>(),
+      db.prepare("SELECT COUNT(*) AS count FROM forward_outcomes").first<{ count: number }>(),
+      db
+        .prepare(
+          `SELECT rp.computed_run_id, rp.methodology_version, rp.committed_at
+           FROM app_state state JOIN research_publications rp ON rp.computed_run_id = state.value
+           WHERE state.key = 'research_run_id' AND rp.status = 'ACTIVE' LIMIT 1`,
+        )
+        .first<{ computed_run_id: string; methodology_version: string; committed_at: string | null }>(),
+      db
+        .prepare(
+          `SELECT * FROM research_bucket_stats
+           ORDER BY CASE score_bucket
+             WHEN '95-100' THEN 1 WHEN '90-94' THEN 2 WHEN '85-89' THEN 3
+             WHEN '80-84' THEN 4 WHEN '70-79' THEN 5 WHEN '60-69' THEN 6
+             WHEN '50-59' THEN 7 ELSE 8 END, horizon`,
+        )
+        .all<Record<string, unknown>>(),
+    ]);
+    return {
+      methodologyVersion: active?.methodology_version ?? RESEARCH_METHODOLOGY,
+      scoreDates: Number(runs?.count ?? 0),
+      observationCount: Number(observations?.count ?? 0),
+      latestResearchRunId: active?.computed_run_id ?? null,
+      latestResearchAt: active?.committed_at ?? null,
+      minimumSample: 30,
+      establishedSample: 100,
+      statistics: statistics.results.map((row) => ({
+        scoreBucket: String(row.score_bucket),
+        horizon: Number(row.horizon),
+        sampleSize: Number(row.sample_size),
+        averageReturn: Number(row.average_return),
+        medianReturn: Number(row.median_return),
+        winRate: Number(row.win_rate),
+        averageMae: Number(row.average_mae),
+        averageMfe: Number(row.average_mfe),
+        standardError: row.standard_error === null ? null : Number(row.standard_error),
+        confidenceLow: row.confidence_low === null ? null : Number(row.confidence_low),
+        confidenceHigh: row.confidence_high === null ? null : Number(row.confidence_high),
+        profitFactor: row.profit_factor === null ? null : Number(row.profit_factor),
+        firstSignalDate: String(row.first_signal_date),
+        lastExitDate: String(row.last_exit_date),
+        updatedAt: String(row.updated_at),
+      })),
+    };
+  } catch {
+    return empty;
   }
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { isOwnerRequest, ownerOnlyResponse } from "@/app/lib/owner-auth";
 import { getDashboardSnapshot } from "@/app/lib/repository";
 
 export async function GET() {
+  if (!(await isOwnerRequest())) return ownerOnlyResponse();
   const snapshot = await getDashboardSnapshot({ pageSize: 10 });
   return NextResponse.json(
     {
@@ -10,7 +12,6 @@ export async function GET() {
       issues: snapshot.issues,
       failClosed: snapshot.mode !== "LIVE" || snapshot.run.status !== "ACTIVE",
     },
-    { headers: { "Cache-Control": "no-store" } },
+    { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } },
   );
 }
-

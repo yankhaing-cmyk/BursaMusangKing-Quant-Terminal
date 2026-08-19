@@ -1,3 +1,5 @@
+import { isOwnerEmail } from "@/app/lib/owner-auth";
+
 type RuntimeEnv = {
   DB?: D1Database;
   RUN_ENABLED?: string;
@@ -35,7 +37,7 @@ function json(body: Record<string, unknown>, status = 200): Response {
 
 function authenticatedEmail(request: Request): string | null {
   const email = request.headers.get("oai-authenticated-user-email")?.trim();
-  return email && email.length <= 254 ? email : null;
+  return email && email.length <= 254 && isOwnerEmail(email) ? email : null;
 }
 
 function hasSameOrigin(request: Request): boolean {
@@ -76,7 +78,7 @@ async function saveState(db: D1Database, state: ManualRunState): Promise<void> {
 
 export async function POST(request: Request) {
   const requestedBy = authenticatedEmail(request);
-  if (!requestedBy) return json({ ok: false, error: "authentication_required" }, 401);
+  if (!requestedBy) return json({ ok: false, error: "owner_access_required" }, 403);
   if (!hasSameOrigin(request)) return json({ ok: false, error: "invalid_origin" }, 403);
 
   const env = await runtimeEnv();
@@ -136,7 +138,7 @@ export async function POST(request: Request) {
     requestedAt: new Date().toISOString(),
     requestedBy,
     status: "QUEUING",
-    detail: "Dispatching full-universe shadow screening",
+    detail: "Dispatching full-universe screening with verified publication",
   };
   await saveState(env.DB, state);
 
@@ -151,7 +153,7 @@ export async function POST(request: Request) {
         "User-Agent": "BursaMusangKing-Quant-Terminal",
         "X-GitHub-Api-Version": "2022-11-28",
       },
-      body: JSON.stringify({ ref, inputs: { publish: "false" } }),
+      body: JSON.stringify({ ref, inputs: { publish: "true" } }),
     });
     if (response.status !== 204) {
       const failed = {
@@ -173,7 +175,7 @@ export async function POST(request: Request) {
     const queued = {
       ...state,
       status: "QUEUED" as const,
-      detail: "Full Bursa shadow screening queued; live publication remains disabled",
+      detail: "Full Bursa screening queued with verified private publication",
     };
     await saveState(env.DB, queued);
     return json(
@@ -181,7 +183,7 @@ export async function POST(request: Request) {
         ok: true,
         status: queued.status,
         requestedAt: queued.requestedAt,
-        message: "Full Bursa screening queued. Live publication remains disabled pending acceptance.",
+        message: "Full Bursa screening queued. Verified scores will update the private terminal.",
       },
       202,
     );

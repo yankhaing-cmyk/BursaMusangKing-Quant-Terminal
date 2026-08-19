@@ -1,4 +1,6 @@
 import { canonicalScore as canonicalScoreShared } from "@/shared/canonical-score.mjs";
+import { isValidBursaSymbol } from "@/shared/bursa-symbol.mjs";
+import { verifyGitHubActionsToken } from "@/shared/github-oidc.mjs";
 
 type RuntimeEnv = {
   DB?: D1Database;
@@ -84,16 +86,18 @@ export async function sha256Hex(value: string): Promise<string> {
 }
 
 export async function authorized(request: Request): Promise<boolean> {
-  const expected = (await runtimeEnv()).INGEST_TOKEN;
-  if (!expected || expected.length < 24) return false;
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const supplied = bearer ?? request.headers.get("x-ingest-token") ?? "";
-  const [left, right] = await Promise.all([digest(expected), digest(supplied)]);
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left[index] ^ right[index];
+  const expected = (await runtimeEnv()).INGEST_TOKEN;
+  if (expected && expected.length >= 24) {
+    const supplied = bearer ?? request.headers.get("x-ingest-token") ?? "";
+    const [left, right] = await Promise.all([digest(expected), digest(supplied)]);
+    let difference = 0;
+    for (let index = 0; index < left.length; index += 1) {
+      difference |= left[index] ^ right[index];
+    }
+    if (difference === 0) return true;
   }
-  return difference === 0;
+  return bearer ? verifyGitHubActionsToken(bearer) : false;
 }
 
 export async function readJson<T>(request: Request): Promise<T> {
@@ -134,7 +138,7 @@ export function canonicalScore(row: ScorePayload): string {
 }
 
 export async function validateScore(row: ScorePayload): Promise<string | null> {
-  if (!/^[A-Z0-9.-]{1,20}$/.test(row.symbol.trim().toUpperCase())) {
+  if (!isValidBursaSymbol(row.symbol)) {
     return "invalid_symbol";
   }
   if (!row.name?.trim() || !row.sector?.trim()) return "missing_identity";

@@ -139,6 +139,41 @@ class QuantPipelineTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 store.save(conflict)
 
+    def test_forward_outcomes_require_real_future_sessions_and_are_immutable(self) -> None:
+        dates = self.bundle.bars["date"].sort_values().unique()
+        cutoff = dates[-7]
+        prefix = replace(
+            self.bundle,
+            bars=self.bundle.bars[self.bundle.bars["date"] <= cutoff].copy(),
+            benchmarks=self.bundle.benchmarks[
+                self.bundle.benchmarks["date"] <= cutoff
+            ].copy(),
+            source_market_date=str(np.datetime64(cutoff, "D")),
+        )
+        first = QuantPipeline(self.config).run(prefix)
+        second = QuantPipeline(self.config).run(self.bundle)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "research.sqlite"
+            store = ResearchStore(path)
+            self.assertEqual(store.save(first), [])
+            outcomes = store.save(second)
+            five_day = [row for row in outcomes if row["horizon"] == 5]
+            self.assertEqual(len(five_day), len(first.records))
+            self.assertFalse([row for row in outcomes if row["horizon"] in (10, 20, 60)])
+            for row in five_day:
+                self.assertGreater(row["entry_date"], row["signal_date"])
+                self.assertLessEqual(row["mae"], row["forward_return"])
+                self.assertGreaterEqual(row["mfe"], row["forward_return"])
+                self.assertEqual(len(row["observation_hash"]), 64)
+            self.assertEqual(store.save(second), [])
+            with sqlite3.connect(path) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM local_forward_outcomes"
+                    ).fetchone()[0],
+                    len(five_day),
+                )
+
 
 @unittest.skipUnless(os.environ.get("BMK_FULL_SMOKE") == "1", "set BMK_FULL_SMOKE=1")
 class FullUniverseSmokeTest(unittest.TestCase):

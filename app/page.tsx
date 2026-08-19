@@ -1,14 +1,32 @@
 import { QuantTerminal } from "@/app/components/QuantTerminal";
 import { PwaRegister } from "@/app/components/PwaRegister";
-import { getDashboardSnapshot } from "@/app/lib/repository";
+import { chatGPTSignOutPath } from "@/app/chatgpt-auth";
+import { requireOwnerPage } from "@/app/lib/owner-auth";
+import { getDashboardSnapshot, getResearchSnapshot } from "@/app/lib/repository";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const snapshot = await getDashboardSnapshot({ page: 1, pageSize: 100 });
+  const owner = await requireOwnerPage("/");
+  if (!owner) {
+    return (
+      <main className="access-denied-shell">
+        <section className="access-denied-card">
+          <p className="eyebrow">PRIVATE QUANT RESEARCH</p>
+          <h1>Owner access required</h1>
+          <p>This terminal and its Bursa ranking data are restricted to the owner.</p>
+          <a href={chatGPTSignOutPath("/")}>Sign out and use the owner account</a>
+        </section>
+      </main>
+    );
+  }
+  const [snapshot, research] = await Promise.all([
+    getDashboardSnapshot({ page: 1, pageSize: 100 }),
+    getResearchSnapshot(),
+  ]);
   return (
     <>
-      <QuantTerminal initialSnapshot={snapshot} />
+      <QuantTerminal initialSnapshot={snapshot} initialResearch={research} />
       <PwaRegister />
     </>
   );

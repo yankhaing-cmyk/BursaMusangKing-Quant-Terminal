@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isOwnerRequest, ownerOnlyResponse } from "@/app/lib/owner-auth";
 import { getDashboardSnapshot } from "@/app/lib/repository";
 import type { RankingQuery } from "@/app/lib/types";
 
 export async function GET(request: NextRequest) {
+  if (!(await isOwnerRequest())) return ownerOnlyResponse();
   const params = request.nextUrl.searchParams;
   const sort = params.get("sort") as RankingQuery["sort"];
   const direction = params.get("direction") as RankingQuery["direction"];
@@ -17,11 +19,8 @@ export async function GET(request: NextRequest) {
   });
   return NextResponse.json(snapshot, {
     headers: {
-      "Cache-Control":
-        snapshot.mode === "LIVE"
-          ? "public, max-age=30, stale-while-revalidate=120"
-          : "no-store",
+      "Cache-Control": "private, no-store",
+      Vary: "Cookie",
     },
   });
 }
-

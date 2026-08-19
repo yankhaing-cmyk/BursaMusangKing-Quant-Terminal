@@ -88,20 +88,47 @@ class QuantPublisher:
         if len(instrument_by_symbol) != len(instruments):
             raise PublishError("duplicate instruments in artifacts")
 
-        start = self._post("/api/admin/runs/start", manifest)
-        if start.get("status") == "already_active":
-            return start
-        run_id = str(manifest["run_id"])
-        for batch in _chunks(scores, 40):
-            batch_instruments = [instrument_by_symbol[row["symbol"]] for row in batch]
-            self._post(
-                f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/scores",
-                {"instruments": batch_instruments, "scores": batch},
-            )
-        return self._post(
-            f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/commit",
-            {},
+        research_path = directory / "research.jsonl"
+        research_manifest_path = directory / "research-manifest.json"
+        research = _read_json_lines(research_path) if research_path.exists() else []
+        research_manifest = (
+            json.loads(research_manifest_path.read_text(encoding="utf-8"))
+            if research_manifest_path.exists()
+            else None
         )
+
+        start = self._post("/api/admin/runs/start", manifest)
+        run_id = str(manifest["run_id"])
+        quant_result = start
+        if start.get("status") != "already_active":
+            for batch in _chunks(scores, 40):
+                batch_instruments = [instrument_by_symbol[row["symbol"]] for row in batch]
+                self._post(
+                    f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/scores",
+                    {"instruments": batch_instruments, "scores": batch},
+                )
+            quant_result = self._post(
+                f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/commit",
+                {},
+            )
+        if research_manifest is None:
+            return quant_result
+        if len(research) != int(research_manifest["expected_observations"]):
+            raise PublishError("research artifact count does not match its manifest")
+        research_start = self._post("/api/admin/research/start", research_manifest)
+        if research_start.get("status") != "already_active":
+            for batch in _chunks(research, 40):
+                self._post(
+                    f"/api/admin/research/{urllib.parse.quote(run_id, safe='')}/outcomes",
+                    {"outcomes": batch},
+                )
+            research_result = self._post(
+                f"/api/admin/research/{urllib.parse.quote(run_id, safe='')}/commit",
+                {},
+            )
+        else:
+            research_result = research_start
+        return {**quant_result, "research": research_result}
 
 
 def token_from_environment(name: str = "BMK_INGEST_TOKEN") -> str:
@@ -109,4 +136,3 @@ def token_from_environment(name: str = "BMK_INGEST_TOKEN") -> str:
     if not token:
         raise ValueError(f"required secret {name} is not configured")
     return token
-

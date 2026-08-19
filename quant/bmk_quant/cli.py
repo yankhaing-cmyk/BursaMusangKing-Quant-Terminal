@@ -41,9 +41,9 @@ def run_command(args: argparse.Namespace) -> int:
         max_market_age_days=None if args.allow_fixture else 7,
     )
     result = QuantPipeline(config).run(bundle)
-    paths = write_artifacts(result, args.output)
+    research_outcomes = []
     if args.history_db:
-        ResearchStore(args.history_db).save(result)
+        research_outcomes = ResearchStore(args.history_db).save(result)
         if archive:
             archive.save_checkpoint(
                 args.history_db,
@@ -51,6 +51,7 @@ def run_command(args: argparse.Namespace) -> int:
                 result.manifest["payload_hash"],
                 result.manifest,
             )
+    paths = write_artifacts(result, args.output, research_outcomes)
     print(
         json.dumps(
             {
@@ -58,6 +59,7 @@ def run_command(args: argparse.Namespace) -> int:
                 "market_date": result.validation.market_date,
                 "valid_symbols": len(result.records),
                 "payload_hash": result.manifest["payload_hash"],
+                "research_observations": len(research_outcomes),
                 "artifacts": {name: str(path) for name, path in paths.items()},
             },
             sort_keys=True,

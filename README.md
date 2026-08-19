@@ -1,10 +1,10 @@
 # BursaMusangKing Quant Terminal
 
-Standalone Phase 1 quantitative ranking platform for the full Bursa Malaysia equity universe.
+Standalone quantitative ranking and evidence-collection platform for the full Bursa Malaysia equity universe.
 
 ## Current scope
 
-Phase 1 is implemented:
+Phase 1 is implemented and the Phase 2 research foundation is active:
 
 - point-in-time daily OHLCV validation
 - mandatory FBM KLCI benchmark alignment
@@ -14,12 +14,16 @@ Phase 1 is implemented:
 - fixed and versioned `quant-v1.0.0` ensemble
 - Quant Score and rank for every eligible counter
 - transparent liquidity caps for extremely illiquid counters
-- immutable daily score records and auditable raw-data versions with private R2 checkpoints
+- immutable daily score records and auditable raw-data versions
 - two-phase D1 publication that preserves the prior good run on failure
-- mobile-first Today, Ranking, stock inspector and Health views
+- next-session-open 5D, 10D, 20D and 60D forward-outcome collection
+- immutable MAE/MFE observations with checksum-verified research publication
+- score-bucket averages, medians, win rates, profit factors and 95% confidence intervals
+- sample-size policy that hides estimates below 30 observations
+- mobile-first Today, Ranking, Research, stock inspector and Health views
 - dark/light mode and installable PWA shell
 
-Phase 1 does **not** produce buy/sell orders, expected-edge claims, position sizes, portfolio allocations or machine-learning predictions. Those remain later phases and are deliberately not faked in the interface.
+Phase 2 does **not** claim an expected edge until real forward observations mature and pass the stated sample thresholds. The system still produces no buy/sell orders, position sizes, portfolio allocations or machine-learning predictions.
 
 ## System boundary
 
@@ -27,7 +31,7 @@ Phase 1 does **not** produce buy/sell orders, expected-edge claims, position siz
 TradingView Malaysia scanner + anonymous daily history
         ↓
 GitHub Actions + Python
-validate → factors → subscores → Quant Score → signed artifacts
+validate → factors → Quant Score → forward outcomes → signed artifacts
         ↓
 protected two-phase publish
         ↓
@@ -52,16 +56,17 @@ The repository has no code or runtime dependency on the existing Bursa Strategy 
 
 `Strategy Ensemble` is the mean of the Trending, Momentum Strategy and M.E.T.A. subscores. Price Structure is visible and contributes inside Trending and M.E.T.A. to avoid double-counting it as an extra top-level weight.
 
-The initial weights are hypotheses, not proof of edge. They remain fixed until Phase 2 builds score histories, forward-return buckets and out-of-sample evidence.
+The initial weights are hypotheses, not proof of edge. Phase 2 measures them without changing them; optimization remains prohibited until sufficient out-of-sample evidence exists.
 
 ## Repository map
 
 - `app/` — browser UI, read APIs and protected ingestion endpoints
 - `db/` and `drizzle/` — D1 schema and migrations
-- `quant/bmk_quant/` — Python validation, factor, scoring, storage and publishing engine
+- `quant/bmk_quant/` — Python validation, scoring, research storage and publishing engine
 - `quant/tests/` — deterministic, fail-closed and full-universe tests
 - `.github/workflows/` — CI plus gated manual/weekday quant workflow
 - `docs/PHASE1_ARCHITECTURE.md` — the complete 12-part architecture and acceptance criteria
+- `docs/PHASE2_RESEARCH.md` — forward-outcome methodology and confidence policy
 - `docs/DATA_CONTRACT.md` — vendor-neutral source contract
 - `docs/DEPLOYMENT.md` — sequential Cloudflare Dashboard and GitHub setup
 
@@ -118,7 +123,7 @@ bmk-quant run \
 
 Fixture data is marked and cannot silently become a live feed. The app shows an unmistakable **NOT LIVE** state until a verified D1 run is activated.
 
-The header includes a protected **Run** button for full-universe shadow screening. The server dispatches the GitHub Actions workflow without exposing the token, applies an owner-authentication check and cooldown, and always sends `publish=false`. `RUN_ENABLED` must remain false until at least one complete free-TradingView shadow run passes review.
+The header includes a protected **Run** button for full-universe screening. It calls the dedicated Cloudflare run gateway, which keeps the GitHub dispatch token encrypted, requires a separate manual-run key, and applies an origin allowlist and cooldown. The key is stored only on the operator's device after first use. Accepted runs publish with a short-lived GitHub Actions OIDC token that is restricted to this repository, workflow, branch, and environment. Browser pages and read/run APIs independently enforce the owner email after ChatGPT sign-in; anonymous and non-owner requests cannot read rankings. The D1 ingestion gate rejects incomplete, stale, conflicting, or malformed snapshots and preserves the previous verified run on failure. Automated weekday publication remains disabled until the full live acceptance checklist is complete.
 
 ## Deployment
 

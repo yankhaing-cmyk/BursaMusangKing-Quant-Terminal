@@ -41,6 +41,13 @@ jobs:
           key: bmk-tv-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             bmk-tv-${{ runner.os }}-
+      - name: Restore Phase 2 research history
+        uses: actions/cache/restore@v4
+        with:
+          path: artifacts/quant_history.sqlite
+          key: bmk-research-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            bmk-research-${{ runner.os }}-
       - name: Validate and score the full Bursa universe
         run: >-
           bmk-quant run
@@ -51,6 +58,11 @@ jobs:
           --cache-dir .cache/tradingview
           --bars 400
           --request-delay 0.12
+      - name: Save Phase 2 research history
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/quant_history.sqlite
+          key: bmk-research-${{ runner.os }}-${{ github.run_id }}
       - name: Save anonymous TradingView history cache
         if: always()
         uses: actions/cache/save@v4

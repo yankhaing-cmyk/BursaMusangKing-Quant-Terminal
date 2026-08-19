@@ -9,6 +9,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from .pipeline import QuantResult
+from .research import METHODOLOGY_VERSION, research_payload_hash
 
 
 def _atomic_text(path: Path, content: str) -> None:
@@ -35,7 +36,11 @@ def _json_lines(records: Iterable[dict[str, Any]]) -> str:
     )
 
 
-def write_artifacts(result: QuantResult, output_directory: str | Path) -> dict[str, Path]:
+def write_artifacts(
+    result: QuantResult,
+    output_directory: str | Path,
+    research_outcomes: list[dict[str, Any]] | None = None,
+) -> dict[str, Path]:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -44,6 +49,8 @@ def write_artifacts(result: QuantResult, output_directory: str | Path) -> dict[s
         "instruments": output / "instruments.jsonl",
         "validation": output / "validation.json",
         "ranking": output / "ranking.csv",
+        "research": output / "research.jsonl",
+        "research_manifest": output / "research-manifest.json",
     }
     _atomic_text(
         paths["manifest"],
@@ -51,6 +58,23 @@ def write_artifacts(result: QuantResult, output_directory: str | Path) -> dict[s
     )
     _atomic_text(paths["scores"], _json_lines(result.records))
     _atomic_text(paths["instruments"], _json_lines(result.instruments))
+    outcomes = research_outcomes or []
+    _atomic_text(paths["research"], _json_lines(outcomes))
+    _atomic_text(
+        paths["research_manifest"],
+        json.dumps(
+            {
+                "computed_run_id": result.manifest["run_id"],
+                "methodology_version": METHODOLOGY_VERSION,
+                "expected_observations": len(outcomes),
+                "payload_hash": research_payload_hash(outcomes),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n",
+    )
     _atomic_text(
         paths["validation"],
         json.dumps(result.validation.as_dict(), ensure_ascii=False, sort_keys=True, indent=2)
@@ -78,4 +102,3 @@ def write_artifacts(result: QuantResult, output_directory: str | Path) -> dict[s
     csv = pd.DataFrame(result.records)[ranking_columns].to_csv(index=False, lineterminator="\n")
     _atomic_text(paths["ranking"], csv)
     return paths
-
