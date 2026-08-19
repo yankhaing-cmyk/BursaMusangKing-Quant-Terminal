@@ -6,9 +6,11 @@ import type {
   QuantRow,
   RankingQuery,
   ResearchSnapshot,
+  TradeSnapshot,
+  TradeState,
 } from "@/app/lib/types";
 
-type Tab = "today" | "ranking" | "regime" | "research" | "health";
+type Tab = "today" | "ranking" | "open" | "regime" | "research" | "health";
 type Sort = NonNullable<RankingQuery["sort"]>;
 
 const RUN_GATEWAY_URL = "https://bursa-quant-run-gateway.yankhaing.workers.dev/run";
@@ -64,6 +66,14 @@ function regimeTone(label: string): string {
   if (label === "RISK-OFF") return "regime-off";
   if (label === "STRONG RISK-OFF") return "regime-strong-off";
   return "regime-neutral";
+}
+
+function tradeTone(state: TradeState["state"]): string {
+  if (state === "NEAR_SELL") return "trade-near";
+  if (state === "CLOSED") return "trade-closed";
+  if (state === "BUY_PENDING") return "trade-pending";
+  if (state === "OPEN") return "trade-open";
+  return "trade-flat";
 }
 
 function ScoreBadge({ value, large = false }: { value: number; large?: boolean }) {
@@ -142,7 +152,7 @@ function Header({
   );
 }
 
-function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onInspect: (row: QuantRow) => void }) {
+function TodayView({ snapshot, trades, onInspect }: { snapshot: DashboardSnapshot; trades: TradeSnapshot; onInspect: (row: QuantRow) => void }) {
   const top = snapshot.rows.slice(0, 5);
   const live = snapshot.mode === "LIVE";
   return (
@@ -237,6 +247,7 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
             <div><span>Partial publish</span><strong className="negative">BLOCKED</strong></div>
             <div><span>ML layer</span><strong>OFF</strong></div>
             <div><span>Regime model</span><strong>{snapshot.marketRegime ? "ACTIVE" : "AWAITING RUN"}</strong></div>
+            <div><span>Trade ledger</span><strong>{trades.status === "ACTIVE" ? "SHADOW ACTIVE" : "AWAITING RUN"}</strong></div>
           </div>
         </article>
         <article className="panel compact-panel">
@@ -250,6 +261,117 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
           <p className="empty-copy">
             The forward-outcome collector is active. Estimates remain hidden until each score bucket has a sufficient real sample.
           </p>
+        </article>
+      </section>
+      {trades.status === "ACTIVE" && trades.events.length > 0 && (
+        <section className="panel">
+          <div className="panel-heading">
+            <div><p className="section-kicker">PHASE 4 EVENTS</p><h2>New and changed trade states</h2></div>
+            <span className="phase-pill">SHADOW</span>
+          </div>
+          <div className="trade-event-list">
+            {trades.events.slice(0, 6).map((event) => (
+              <div className="trade-event-row" key={event.eventId}>
+                <span className={`trade-state-pill ${tradeTone(event.newState)}`}>{event.eventType.replaceAll("_", " ")}</span>
+                <span><strong>{event.symbol}</strong><small>{event.name}</small></span>
+                <span><small>{event.priorState} → {event.newState}</small><strong>{event.eventPrice === null ? "—" : `RM ${formatPrice(event.eventPrice)}`}</strong></span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function OpenView({ trades }: { trades: TradeSnapshot }) {
+  if (trades.status !== "ACTIVE") {
+    return (
+      <div className="view-stack">
+        <section className="research-hero trade-empty">
+          <div>
+            <p className="section-kicker">PHASE 4 · TRADE STATE</p>
+            <h2>Awaiting the next verified screening run</h2>
+            <p className="muted">
+              Phase 4 is deployed, but no position state will be invented for the older active snapshot.
+              The next valid Bursa date can create BUY_PENDING records; entry can only occur at a later session open.
+            </p>
+          </div>
+          <span className="research-state">FAIL CLOSED</span>
+        </section>
+      </div>
+    );
+  }
+  return (
+    <div className="view-stack">
+      <section className="trade-hero">
+        <div>
+          <p className="section-kicker">PHASE 4 · TRADE STATE</p>
+          <h2>Tracked shadow ledger</h2>
+          <p className="muted">
+            Next-session-open entries and ATR stops are tracked systematically. This ledger does not route orders.
+          </p>
+        </div>
+        <span className="research-state">NO ORDER ROUTING</span>
+      </section>
+
+      <section className="metric-grid" aria-label="Trade state overview">
+        <article className="metric-card"><span>BUY PENDING</span><strong>{trades.stateCounts.BUY_PENDING}</strong><small>Next session open</small></article>
+        <article className="metric-card"><span>OPEN</span><strong>{trades.stateCounts.OPEN}</strong><small>ATR tracking</small></article>
+        <article className="metric-card"><span>NEAR SELL</span><strong className="negative">{trades.stateCounts.NEAR_SELL}</strong><small>Risk-first</small></article>
+        <article className="metric-card"><span>CLOSED TODAY</span><strong>{trades.stateCounts.CLOSED}</strong><small>Stop events</small></article>
+      </section>
+
+      <section className="panel trade-ledger-panel">
+        <div className="panel-heading">
+          <div><p className="section-kicker">ACTIVE LEDGER</p><h2>Positions ordered by risk</h2></div>
+          <span className="panel-meta">{trades.marketDate}</span>
+        </div>
+        {trades.states.length ? (
+          <div className="trade-card-list">
+            {trades.states.map((row) => (
+              <article className={`trade-card ${tradeTone(row.state)}`} key={row.symbol}>
+                <div className="trade-card-heading">
+                  <span className={`trade-state-pill ${tradeTone(row.state)}`}>{row.state.replaceAll("_", " ")}</span>
+                  <div><strong>{row.symbol}</strong><small>{row.name} · {row.sector}</small></div>
+                  <ScoreBadge value={row.quantScore} />
+                </div>
+                <div className="trade-card-grid">
+                  <div><span>Last close</span><strong>RM {formatPrice(row.lastClose)}</strong></div>
+                  <div><span>Entry</span><strong>{row.entryPrice === null ? "Next open" : `RM ${formatPrice(row.entryPrice)}`}</strong></div>
+                  <div><span>ATR stop</span><strong>{row.trailingStop === null ? "Pending" : `RM ${formatPrice(row.trailingStop)}`}</strong></div>
+                  <div><span>Stop distance</span><strong>{formatPercent(row.stopDistancePct)}</strong></div>
+                  <div><span>Unrealised</span><strong className={(row.unrealizedReturn ?? 0) < 0 ? "negative" : "good-text"}>{formatPercent(row.unrealizedReturn)}</strong></div>
+                  <div><span>Expected 20D edge</span><strong>{row.expectedEdge20d === null ? `Collecting · n=${row.edgeSampleSize}` : `${formatPercent(row.expectedEdge20d)} · n=${row.edgeSampleSize}`}</strong></div>
+                </div>
+                <p className="trade-reason">{row.reason.replaceAll("_", " ")}</p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-copy">No active or changed trade states. The ledger remains FLAT.</p>
+        )}
+      </section>
+
+      <section className="two-column">
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">EXECUTION ORDER</p><h2>Frozen controls</h2></div></div>
+          <div className="guard-list">
+            <div><span>Signal entry</span><strong>Next session open</strong></div>
+            <div><span>ATR multiple</span><strong>{trades.atrStopMultiple.toFixed(1)}×</strong></div>
+            <div><span>Stop check</span><strong>Before peak update</strong></div>
+            <div><span>Peak basis</span><strong>Highest close</strong></div>
+            <div><span>Same-day re-entry</span><strong className="negative">BLOCKED</strong></div>
+          </div>
+        </article>
+        <article className="panel compact-panel">
+          <div className="panel-heading"><div><p className="section-kicker">EXPECTED EDGE</p><h2>Confidence gate</h2></div></div>
+          <div className="guard-list">
+            <div><span>Hidden</span><strong>n &lt; 30</strong></div>
+            <div><span>Provisional</span><strong>n = 30–99</strong></div>
+            <div><span>Established</span><strong>n ≥ 100</strong></div>
+            <div><span>Automatic orders</span><strong className="negative">OFF</strong></div>
+          </div>
         </article>
       </section>
     </div>
@@ -485,7 +607,7 @@ function RankingView({
   );
 }
 
-function HealthView({ snapshot }: { snapshot: DashboardSnapshot }) {
+function HealthView({ snapshot, trades }: { snapshot: DashboardSnapshot; trades: TradeSnapshot }) {
   const live = snapshot.mode === "LIVE";
   const hash = snapshot.run.payloadHash;
   const rows = [
@@ -496,6 +618,9 @@ function HealthView({ snapshot }: { snapshot: DashboardSnapshot }) {
     ["Minimum universe", "900", ""],
     ["Data provider", snapshot.run.provider, ""],
     ["Model version", snapshot.run.modelVersion, ""],
+    ["Trade methodology", trades.methodologyVersion, ""],
+    ["Trade publication", trades.status, trades.status === "ACTIVE" ? "good-text" : ""],
+    ["Automatic execution", "OFF", "good-text"],
     ["Last successful run", snapshot.run.committedAt ?? "None", ""],
     ["Payload hash", hash ? `${hash.slice(0, 12)}…${hash.slice(-8)}` : "None", "mono"],
   ];
@@ -709,7 +834,7 @@ function Inspector({ row, onClose, demo }: { row: QuantRow; onClose: () => void;
           <p>{row.historyDays} trading bars · Sector RS {row.sectorRsAvailable ? "available" : "unavailable"}</p>
           <div className="flag-row">{row.qualityFlags.length ? row.qualityFlags.map((flag) => <span key={flag}>{flag.replaceAll("_", " ")}</span>) : <span className="clear-flag">NO QUALITY FLAGS</span>}</div>
         </div>
-        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Expected edge stays hidden until Phase 2 reaches its stated sample threshold; position sizing remains a later phase.</p>
+        <p className="inspector-footnote">Quant Score is a ranking signal, not a buy instruction. Phase 4 trade states are shadow records only; expected edge stays hidden below the minimum sample and position sizing remains Phase 5.</p>
       </aside>
     </div>
   );
@@ -718,9 +843,11 @@ function Inspector({ row, onClose, demo }: { row: QuantRow; onClose: () => void;
 export function QuantTerminal({
   initialSnapshot,
   initialResearch,
+  initialTrades,
 }: {
   initialSnapshot: DashboardSnapshot;
   initialResearch: ResearchSnapshot;
+  initialTrades: TradeSnapshot;
 }) {
   const [tab, setTab] = useState<Tab>("today");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -845,15 +972,17 @@ export function QuantTerminal({
         </div>
       )}
       <main className="terminal-main">
-        {tab === "today" && <TodayView snapshot={snapshot} onInspect={setSelected} />}
+        {tab === "today" && <TodayView snapshot={snapshot} trades={initialTrades} onInspect={setSelected} />}
         {tab === "ranking" && <RankingView snapshot={snapshot} onInspect={setSelected} query={query} setQuery={setQuery} page={page} setPage={setPage} loading={loading} />}
+        {tab === "open" && <OpenView trades={initialTrades} />}
         {tab === "regime" && <RegimeView snapshot={snapshot} />}
         {tab === "research" && <ResearchView research={initialResearch} />}
-        {tab === "health" && <HealthView snapshot={snapshot} />}
+        {tab === "health" && <HealthView snapshot={snapshot} trades={initialTrades} />}
       </main>
       <nav className="bottom-nav" aria-label="Primary navigation">
         <button type="button" className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}><span aria-hidden="true">◫</span><strong>Today</strong></button>
         <button type="button" className={tab === "ranking" ? "active" : ""} onClick={() => setTab("ranking")}><span aria-hidden="true">≡</span><strong>Ranking</strong></button>
+        <button type="button" className={tab === "open" ? "active" : ""} onClick={() => setTab("open")}><span aria-hidden="true">◆</span><strong>Open</strong></button>
         <button type="button" className={tab === "regime" ? "active" : ""} onClick={() => setTab("regime")}><span aria-hidden="true">◉</span><strong>Regime</strong></button>
         <button type="button" className={tab === "research" ? "active" : ""} onClick={() => setTab("research")}><span aria-hidden="true">∿</span><strong>Research</strong></button>
         <button type="button" className={tab === "health" ? "active" : ""} onClick={() => setTab("health")}><span aria-hidden="true">◇</span><strong>Health</strong></button>

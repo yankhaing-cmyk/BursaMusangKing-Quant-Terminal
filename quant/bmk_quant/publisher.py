@@ -97,6 +97,17 @@ class QuantPublisher:
             else None
         )
 
+        trade_manifest = manifest.get("trade")
+        if not isinstance(trade_manifest, dict):
+            raise PublishError("trade manifest is missing")
+        trade_states = _read_json_lines(directory / "trade-states.jsonl")
+        trade_events = _read_json_lines(directory / "trade-events.jsonl")
+        if (
+            len(trade_states) != int(trade_manifest.get("expected_states", -1))
+            or len(trade_events) != int(trade_manifest.get("expected_events", -1))
+        ):
+            raise PublishError("trade artifact counts do not match the manifest")
+
         start = self._post("/api/admin/runs/start", manifest)
         run_id = str(manifest["run_id"])
         quant_result = start
@@ -107,10 +118,30 @@ class QuantPublisher:
                     f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/scores",
                     {"instruments": batch_instruments, "scores": batch},
                 )
+            for batch in _chunks(trade_states, 40):
+                self._post(
+                    f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/trades",
+                    {"states": batch, "events": []},
+                )
+            for batch in _chunks(trade_events, 40):
+                self._post(
+                    f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/trades",
+                    {"states": [], "events": batch},
+                )
             quant_result = self._post(
                 f"/api/admin/runs/{urllib.parse.quote(run_id, safe='')}/commit",
                 {},
             )
+        confirmation = {
+            "run_id": run_id,
+            "market_date": manifest["market_date"],
+            "payload_hash": manifest["payload_hash"],
+            "status": quant_result.get("status"),
+        }
+        (directory / "quant-publish-confirmed.json").write_text(
+            json.dumps(confirmation, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
         if research_manifest is None:
             return quant_result
         if len(research) != int(research_manifest["expected_observations"]):

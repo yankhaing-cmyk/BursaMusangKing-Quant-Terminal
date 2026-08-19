@@ -36,8 +36,21 @@ class MigrationTests(unittest.TestCase):
                         "app_state",
                         "market_regimes",
                         "research_regime_stats",
+                        "trade_publications",
+                        "trade_state_snapshots",
+                        "trade_events",
                     }
                     <= tables
+                )
+                trade_columns = {
+                    row[1]
+                    for row in connection.execute(
+                        "PRAGMA table_info(trade_state_snapshots)"
+                    ).fetchall()
+                }
+                self.assertTrue(
+                    {"state", "trailing_stop", "expected_edge_20d", "row_hash"}
+                    <= trade_columns
                 )
             finally:
                 connection.close()

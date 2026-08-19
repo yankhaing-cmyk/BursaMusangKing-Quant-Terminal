@@ -207,6 +207,104 @@ export const marketRegimes = sqliteTable(
   ],
 );
 
+export const tradePublications = sqliteTable(
+  "trade_publications",
+  {
+    runId: text("run_id")
+      .primaryKey()
+      .references(() => quantRuns.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["PENDING", "ACTIVE", "REJECTED"],
+    }).notNull().default("PENDING"),
+    methodologyVersion: text("methodology_version").notNull(),
+    expectedStates: integer("expected_states").notNull(),
+    receivedStates: integer("received_states").notNull().default(0),
+    statePayloadHash: text("state_payload_hash").notNull(),
+    expectedEvents: integer("expected_events").notNull(),
+    receivedEvents: integer("received_events").notNull().default(0),
+    eventPayloadHash: text("event_payload_hash").notNull(),
+    atrStopMultiple: real("atr_stop_multiple").notNull(),
+    nearStopAtrMultiple: real("near_stop_atr_multiple").notNull(),
+    automaticExecution: integer("automatic_execution", { mode: "boolean" }).notNull().default(false),
+    startedAt: text("started_at").notNull(),
+    committedAt: text("committed_at"),
+  },
+  (table) => [index("trade_publications_status_idx").on(table.status)],
+);
+
+export const tradeStateSnapshots = sqliteTable(
+  "trade_state_snapshots",
+  {
+    runId: text("run_id")
+      .notNull()
+      .references(() => quantRuns.id, { onDelete: "cascade" }),
+    marketDate: text("market_date").notNull(),
+    methodologyVersion: text("methodology_version").notNull(),
+    symbol: text("symbol").notNull().references(() => instruments.symbol),
+    tradeId: text("trade_id"),
+    state: text("state", {
+      enum: ["FLAT", "BUY_PENDING", "OPEN", "NEAR_SELL", "CLOSED"],
+    }).notNull(),
+    signalRunId: text("signal_run_id"),
+    signalDate: text("signal_date"),
+    signalScoreBucket: text("signal_score_bucket"),
+    entryDate: text("entry_date"),
+    exitDate: text("exit_date"),
+    entryPrice: real("entry_price"),
+    exitPrice: real("exit_price"),
+    peakClose: real("peak_close"),
+    lastClose: real("last_close").notNull(),
+    atr14: real("atr14"),
+    trailingStop: real("trailing_stop"),
+    stopDistancePct: real("stop_distance_pct"),
+    unrealizedReturn: real("unrealized_return"),
+    quantScore: real("quant_score").notNull(),
+    signalQuantScore: real("signal_quant_score"),
+    signalRank: integer("signal_rank"),
+    regimeLabel: text("regime_label").notNull(),
+    expectedEdge20d: real("expected_edge_20d"),
+    edgeSampleSize: integer("edge_sample_size").notNull(),
+    edgeConfidence: text("edge_confidence", {
+      enum: ["INSUFFICIENT", "PROVISIONAL", "ESTABLISHED"],
+    }).notNull(),
+    reason: text("reason").notNull(),
+    rowHash: text("row_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.symbol] }),
+    index("trade_state_run_state_idx").on(table.runId, table.state),
+    index("trade_state_trade_id_idx").on(table.tradeId),
+  ],
+);
+
+export const tradeEvents = sqliteTable(
+  "trade_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    runId: text("run_id").notNull().references(() => quantRuns.id, { onDelete: "cascade" }),
+    marketDate: text("market_date").notNull(),
+    methodologyVersion: text("methodology_version").notNull(),
+    symbol: text("symbol").notNull().references(() => instruments.symbol),
+    tradeId: text("trade_id").notNull(),
+    eventType: text("event_type", {
+      enum: ["SIGNAL", "ENTRY", "NEAR_SELL", "RECOVERED", "EXIT"],
+    }).notNull(),
+    priorState: text("prior_state").notNull(),
+    newState: text("new_state").notNull(),
+    eventPrice: real("event_price"),
+    quantScore: real("quant_score").notNull(),
+    trailingStop: real("trailing_stop"),
+    reason: text("reason").notNull(),
+    rowHash: text("row_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("trade_events_run_type_idx").on(table.runId, table.eventType),
+    index("trade_events_trade_date_idx").on(table.tradeId, table.marketDate),
+  ],
+);
+
 export const researchPublications = sqliteTable(
   "research_publications",
   {

@@ -5,6 +5,12 @@ import {
   sha256Hex,
 } from "@/app/lib/ingest";
 import { validateRegime, type RegimePayload } from "@/app/lib/regime-ingest";
+import {
+  validateTradeEvent,
+  validateTradeState,
+  type TradeEventPayload,
+  type TradeStatePayload,
+} from "@/app/lib/trade-ingest";
 
 export async function POST(
   request: Request,
@@ -58,20 +64,60 @@ export async function POST(
     const computedHash = await sha256Hex(
       hashes.results.map((row) => `${row.symbol}:${row.row_hash}`).join("\n"),
     );
+    const tradePublication = await db
+      .prepare("SELECT * FROM trade_publications WHERE run_id = ? LIMIT 1")
+      .bind(runId)
+      .first<Record<string, unknown>>();
+    const tradeStates = await db
+      .prepare("SELECT * FROM trade_state_snapshots WHERE run_id = ? ORDER BY symbol")
+      .bind(runId)
+      .all<Record<string, unknown>>();
+    const tradeEvents = await db
+      .prepare("SELECT * FROM trade_events WHERE run_id = ? ORDER BY event_id")
+      .bind(runId)
+      .all<Record<string, unknown>>();
+    let tradeValidationError = tradePublication ? "" : "missing_trade_publication";
+    if (tradePublication) {
+      if (tradePublication.status !== "PENDING") tradeValidationError = "trade_publication_not_pending";
+      for (const row of tradeStates.results) {
+        tradeValidationError = (await validateTradeState(row as unknown as TradeStatePayload)) ?? "";
+        if (tradeValidationError) break;
+      }
+      if (!tradeValidationError) {
+        for (const row of tradeEvents.results) {
+          tradeValidationError = (await validateTradeEvent(row as unknown as TradeEventPayload)) ?? "";
+          if (tradeValidationError) break;
+        }
+      }
+    }
+    const computedTradeStateHash = await sha256Hex(
+      tradeStates.results.map((row) => `${row.symbol}:${row.row_hash}`).join("\n"),
+    );
+    const computedTradeEventHash = await sha256Hex(
+      tradeEvents.results.map((row) => `${row.event_id}:${row.row_hash}`).join("\n"),
+    );
     const invalid =
       Number(critical?.count ?? 0) > 0 ||
       Boolean(regimeError) ||
+      Boolean(tradeValidationError) ||
       String(regimeRow?.market_date ?? "") !== String(run.market_date) ||
       received !== expected ||
       computedHash !== String(run.payload_hash) ||
+      tradeStates.results.length !== Number(tradePublication?.expected_states ?? -1) ||
+      tradeEvents.results.length !== Number(tradePublication?.expected_events ?? -1) ||
+      computedTradeStateHash !== String(tradePublication?.state_payload_hash ?? "") ||
+      computedTradeEventHash !== String(tradePublication?.event_payload_hash ?? "") ||
+      Number(tradePublication?.automatic_execution ?? 1) !== 0 ||
       String(run.market_date) !== String(run.benchmark_date);
     if (invalid) {
-      await db
-        .prepare(
-          "UPDATE quant_runs SET status = 'REJECTED', received_symbols = ? WHERE id = ?",
-        )
-        .bind(received, runId)
-        .run();
+      await db.batch([
+        db
+          .prepare("UPDATE quant_runs SET status = 'REJECTED', received_symbols = ? WHERE id = ?")
+          .bind(received, runId),
+        db
+          .prepare("UPDATE trade_publications SET status = 'REJECTED', received_states = ?, received_events = ? WHERE run_id = ?")
+          .bind(tradeStates.results.length, tradeEvents.results.length, runId),
+      ]);
       return errorResponse("commit_validation_failed_previous_run_preserved", 422);
     }
 
@@ -100,6 +146,18 @@ export async function POST(
         .bind(received, committedAt, runId),
       db
         .prepare(
+          `UPDATE trade_publications
+           SET status = 'ACTIVE', received_states = ?, received_events = ?, committed_at = ?
+           WHERE run_id = ? AND status = 'PENDING'
+             AND EXISTS (
+               SELECT 1 FROM quant_runs promoted
+               WHERE promoted.id = trade_publications.run_id
+                 AND promoted.status = 'ACTIVE'
+             )`,
+        )
+        .bind(tradeStates.results.length, tradeEvents.results.length, committedAt, runId),
+      db
+        .prepare(
           `UPDATE quant_runs
            SET status = 'SUPERSEDED'
            WHERE status = 'ACTIVE' AND id <> ?
@@ -125,13 +183,19 @@ export async function POST(
     ]);
     const promoted = await db
       .prepare(
-        `SELECT qr.status, state.value AS active_run_id
-         FROM quant_runs qr LEFT JOIN app_state state ON state.key = 'active_run_id'
+        `SELECT qr.status, state.value AS active_run_id,
+                trades.status AS trade_status
+         FROM quant_runs qr
+         LEFT JOIN app_state state ON state.key = 'active_run_id'
+         LEFT JOIN trade_publications trades ON trades.run_id = qr.id
          WHERE qr.id = ? LIMIT 1`,
       )
       .bind(runId)
-      .first<{ status: string; active_run_id: string | null }>();
-    if (promoted?.status !== "ACTIVE" || promoted.active_run_id !== runId) {
+      .first<{ status: string; active_run_id: string | null; trade_status: string | null }>();
+    if (
+      promoted?.status !== "ACTIVE" || promoted.active_run_id !== runId ||
+      promoted.trade_status !== "ACTIVE"
+    ) {
       return errorResponse("newer_or_conflicting_run_already_active", 409);
     }
     return Response.json({
@@ -141,6 +205,8 @@ export async function POST(
       market_date: run.market_date,
       received_symbols: received,
       payload_hash: computedHash,
+      trade_states: tradeStates.results.length,
+      trade_events: tradeEvents.results.length,
     });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "invalid_request");

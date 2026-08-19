@@ -40,9 +40,12 @@ def write_artifacts(
     result: QuantResult,
     output_directory: str | Path,
     research_outcomes: list[dict[str, Any]] | None = None,
+    trade_states: list[dict[str, Any]] | None = None,
+    trade_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Path]:
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
+    (output / "quant-publish-confirmed.json").unlink(missing_ok=True)
     paths = {
         "manifest": output / "manifest.json",
         "scores": output / "scores.jsonl",
@@ -51,6 +54,8 @@ def write_artifacts(
         "ranking": output / "ranking.csv",
         "research": output / "research.jsonl",
         "research_manifest": output / "research-manifest.json",
+        "trade_states": output / "trade-states.jsonl",
+        "trade_events": output / "trade-events.jsonl",
     }
     _atomic_text(
         paths["manifest"],
@@ -59,7 +64,11 @@ def write_artifacts(
     _atomic_text(paths["scores"], _json_lines(result.records))
     _atomic_text(paths["instruments"], _json_lines(result.instruments))
     outcomes = research_outcomes or []
+    states = trade_states or []
+    events = trade_events or []
     _atomic_text(paths["research"], _json_lines(outcomes))
+    _atomic_text(paths["trade_states"], _json_lines(states))
+    _atomic_text(paths["trade_events"], _json_lines(events))
     _atomic_text(
         paths["research_manifest"],
         json.dumps(

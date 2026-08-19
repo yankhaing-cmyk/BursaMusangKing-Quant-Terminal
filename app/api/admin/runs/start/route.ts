@@ -9,6 +9,10 @@ import {
   requiredDatabase,
 } from "@/app/lib/ingest";
 import { validateRegime, type RegimePayload } from "@/app/lib/regime-ingest";
+import {
+  validateTradeManifest,
+  type TradeManifestPayload,
+} from "@/app/lib/trade-ingest";
 
 type StartPayload = {
   run_id: string;
@@ -29,6 +33,7 @@ type StartPayload = {
     detail: string;
   }>;
   regime: RegimePayload;
+  trade: TradeManifestPayload;
 };
 
 export async function POST(request: Request) {
@@ -75,6 +80,9 @@ export async function POST(request: Request) {
     }
     const regimeError = await validateRegime(body.regime);
     if (regimeError) return errorResponse(regimeError, 422);
+    if (!body.trade) return errorResponse("missing_trade_manifest", 422);
+    const tradeError = validateTradeManifest(body.trade, body.expected_symbols);
+    if (tradeError) return errorResponse(tradeError, 422);
     const issues = body.issues ?? [];
     if (issues.length > 100 || issues.some((issue) => issue.severity === "CRITICAL")) {
       return errorResponse("critical_or_excessive_issues", 422);
@@ -97,6 +105,20 @@ export async function POST(request: Request) {
           .first<{ row_hash: string }>();
         if (activeRegime?.row_hash !== body.regime.row_hash) {
           return errorResponse("active_run_missing_or_conflicting_regime", 409);
+        }
+        const activeTrade = await db
+          .prepare(
+            `SELECT status, state_payload_hash, event_payload_hash
+             FROM trade_publications WHERE run_id = ? LIMIT 1`,
+          )
+          .bind(latestActive.id)
+          .first<{ status: string; state_payload_hash: string; event_payload_hash: string }>();
+        if (
+          activeTrade?.status !== "ACTIVE" ||
+          activeTrade.state_payload_hash !== body.trade.state_payload_hash ||
+          activeTrade.event_payload_hash !== body.trade.event_payload_hash
+        ) {
+          return errorResponse("active_run_missing_or_conflicting_trade_layer", 409);
         }
         return Response.json({
           ok: true,
@@ -210,6 +232,44 @@ export async function POST(request: Request) {
       storedRegime.market_date !== body.market_date
     ) {
       return errorResponse("regime_row_conflict", 409);
+    }
+
+    await db
+      .prepare(
+        `INSERT INTO trade_publications
+         (run_id, status, methodology_version, expected_states, received_states,
+          state_payload_hash, expected_events, received_events,
+          event_payload_hash, atr_stop_multiple, near_stop_atr_multiple,
+          automatic_execution, started_at)
+         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)
+         ON CONFLICT(run_id) DO NOTHING`,
+      )
+      .bind(
+        body.run_id,
+        body.trade.methodology_version,
+        body.trade.expected_states,
+        body.trade.state_payload_hash,
+        body.trade.expected_events,
+        body.trade.event_payload_hash,
+        body.trade.atr_stop_multiple,
+        body.trade.near_stop_atr_multiple,
+        new Date().toISOString(),
+      )
+      .run();
+    const storedTrade = await db
+      .prepare("SELECT * FROM trade_publications WHERE run_id = ? LIMIT 1")
+      .bind(body.run_id)
+      .first<Record<string, unknown>>();
+    if (
+      !storedTrade || storedTrade.status !== "PENDING" ||
+      storedTrade.methodology_version !== body.trade.methodology_version ||
+      Number(storedTrade.expected_states) !== body.trade.expected_states ||
+      storedTrade.state_payload_hash !== body.trade.state_payload_hash ||
+      Number(storedTrade.expected_events) !== body.trade.expected_events ||
+      storedTrade.event_payload_hash !== body.trade.event_payload_hash ||
+      Number(storedTrade.automatic_execution) !== 0
+    ) {
+      return errorResponse("trade_publication_conflict", 409);
     }
 
     const issueStatements = [

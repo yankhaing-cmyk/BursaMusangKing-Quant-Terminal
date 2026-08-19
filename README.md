@@ -4,7 +4,7 @@ Standalone quantitative ranking and evidence-collection platform for the full Bu
 
 ## Current scope
 
-Phases 1–3 are implemented; forward-outcome and market-regime evidence collection is active:
+Phases 1–4 are implemented; forward-outcome, market-regime and shadow trade-state collection is active:
 
 - point-in-time daily OHLCV validation
 - mandatory FBM KLCI benchmark alignment
@@ -24,10 +24,15 @@ Phases 1–3 are implemented; forward-outcome and market-regime evidence collect
 - five market states from `STRONG RISK-ON` through `STRONG RISK-OFF`
 - transparent regime-aware candidate thresholds, exposure ceilings, cash floors and size multipliers
 - regime-specific forward-outcome statistics with the same sample-size controls
-- mobile-first Today, Ranking, Regime, Research, stock inspector and Health views
+- immutable `FLAT`, `BUY_PENDING`, `OPEN`, `NEAR_SELL` and `CLOSED` daily trade states
+- next-session-open entry, no same-day re-entry and gap-aware ATR stop execution
+- prior stop checked before highest-close peak update, with Bursa tick-size rounding
+- expected 20D edge attached only when the matching score/regime sample is at least 30
+- checksum-verified trade-state and event publication that preserves the prior active run on failure
+- mobile-first Today, Ranking, Open, Regime, Research, stock inspector and Health views
 - dark/light mode and installable PWA shell
 
-Phase 2 does **not** claim an expected edge until real forward observations mature and pass the stated sample thresholds. Phase 3 policy values are research guidance only: they do not alter the fixed Quant Score, place orders, or size a live portfolio. The system still produces no buy/sell orders, portfolio allocations or machine-learning predictions.
+Phase 2 does **not** claim an expected edge until real forward observations mature and pass the stated sample thresholds. Phase 3 policy values do not alter the fixed Quant Score. Phase 4 is a shadow trade ledger: it never routes orders, never treats `BUY_PENDING` as a filled position, and keeps expected edge hidden below the minimum sample. Portfolio allocation and machine learning remain off.
 
 ## System boundary
 
@@ -35,7 +40,7 @@ Phase 2 does **not** claim an expected edge until real forward observations matu
 TradingView Malaysia scanner + anonymous daily history
         ↓
 GitHub Actions + Python
-validate → factors → Quant Score → market regime → forward outcomes → signed artifacts
+validate → factors → Quant Score → market regime → trade states → forward outcomes → signed artifacts
         ↓
 protected two-phase publish
         ↓
@@ -72,6 +77,7 @@ The initial weights are hypotheses, not proof of edge. Phase 2 measures them wit
 - `docs/PHASE1_ARCHITECTURE.md` — the complete 12-part architecture and acceptance criteria
 - `docs/PHASE2_RESEARCH.md` — forward-outcome methodology and confidence policy
 - `docs/PHASE3_REGIME.md` — market-regime formula, guidance matrix and validation gates
+- `docs/PHASE4_TRADES.md` — shadow state machine, ATR execution and edge gates
 - `docs/DATA_CONTRACT.md` — vendor-neutral source contract
 - `docs/DEPLOYMENT.md` — sequential Cloudflare Dashboard and GitHub setup
 
@@ -128,7 +134,7 @@ bmk-quant run \
 
 Fixture data is marked and cannot silently become a live feed. The app shows an unmistakable **NOT LIVE** state until a verified D1 run is activated.
 
-The header includes a protected **Run** button for full-universe screening. It calls the dedicated Cloudflare run gateway, which keeps the GitHub dispatch token encrypted, requires a separate manual-run key, and applies an origin allowlist and cooldown. The key is stored only on the operator's device after first use. Accepted runs publish with a short-lived GitHub Actions OIDC token that is restricted to this repository, workflow, branch, and environment. Browser pages and read/run APIs independently enforce the owner email after ChatGPT sign-in; anonymous and non-owner requests cannot read rankings. The D1 ingestion gate rejects incomplete, stale, conflicting, or malformed snapshots and preserves the previous verified run on failure. Automated weekday publication remains disabled until the full live acceptance checklist is complete.
+The header includes a protected **Run** button for full-universe screening. It calls the dedicated Cloudflare run gateway, which keeps the GitHub dispatch token encrypted, requires a separate manual-run key, and applies an origin allowlist and cooldown. The key is stored only on the operator's device after first use. Accepted runs publish with a short-lived GitHub Actions OIDC token that is restricted to this repository, workflow, branch, and environment. Browser pages and read/run APIs independently enforce the owner email after ChatGPT sign-in; anonymous and non-owner requests cannot read rankings or trade states. The D1 ingestion gate rejects incomplete, stale, conflicting, or malformed score/regime/trade snapshots together and preserves the previous verified run on failure. Automated weekday publication remains disabled until the full live acceptance checklist is complete.
 
 ## Deployment
 

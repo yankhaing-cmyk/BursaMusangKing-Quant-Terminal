@@ -2,7 +2,11 @@ import { QuantTerminal } from "@/app/components/QuantTerminal";
 import { PwaRegister } from "@/app/components/PwaRegister";
 import { chatGPTSignOutPath } from "@/app/chatgpt-auth";
 import { requireOwnerPage } from "@/app/lib/owner-auth";
-import { getDashboardSnapshot, getResearchSnapshot } from "@/app/lib/repository";
+import {
+  getDashboardSnapshot,
+  getResearchSnapshot,
+  getTradeSnapshot,
+} from "@/app/lib/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +24,18 @@ export default async function Home() {
       </main>
     );
   }
-  const [snapshot, research] = await Promise.all([
+  const [snapshot, research, trades] = await Promise.all([
     getDashboardSnapshot({ page: 1, pageSize: 100 }),
     getResearchSnapshot(),
+    getTradeSnapshot(),
   ]);
   return (
     <>
-      <QuantTerminal initialSnapshot={snapshot} initialResearch={research} />
+      <QuantTerminal
+        initialSnapshot={snapshot}
+        initialResearch={research}
+        initialTrades={trades}
+      />
       <PwaRegister />
     </>
   );

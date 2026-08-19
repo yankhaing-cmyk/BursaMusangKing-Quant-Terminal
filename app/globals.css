@@ -1184,6 +1184,151 @@ select:focus-visible {
   font-size: 10px;
 }
 
+.trade-hero {
+  align-items: center;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--green) 10%, transparent), transparent 58%),
+    var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 130px;
+  padding: 20px;
+}
+
+.trade-hero h2 {
+  font-size: 22px;
+  margin: 7px 0;
+}
+
+.trade-card-list,
+.trade-event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.trade-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.trade-card.trade-near { border-left-color: var(--red); }
+.trade-card.trade-pending { border-left-color: var(--accent); }
+.trade-card.trade-open { border-left-color: var(--green); }
+.trade-card.trade-closed { border-left-color: var(--faint); opacity: 0.86; }
+
+.trade-card-heading {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.trade-card-heading > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trade-card-heading > div > strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+.trade-card-heading small,
+.trade-event-row small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-state-pill {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  padding: 4px 5px;
+  white-space: nowrap;
+}
+
+.trade-state-pill.trade-near { background: var(--red-soft); color: var(--red); }
+.trade-state-pill.trade-pending { background: var(--accent-soft); color: var(--accent); }
+.trade-state-pill.trade-open { background: var(--green-soft); color: var(--green); }
+.trade-state-pill.trade-closed { color: var(--faint); }
+
+.trade-card-grid {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0 14px;
+  grid-template-columns: repeat(6, minmax(80px, 1fr));
+  margin-top: 11px;
+  padding-top: 8px;
+}
+
+.trade-card-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.trade-card-grid span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.trade-card-grid strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trade-reason {
+  color: var(--faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  line-height: 1.4;
+  margin: 9px 0 0;
+}
+
+.trade-event-list {
+  border-top: 1px solid var(--line);
+}
+
+.trade-event-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 78px minmax(100px, 1fr) minmax(120px, 1fr);
+  padding: 9px 0;
+}
+
+.trade-event-row > span:not(.trade-state-pill) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trade-event-row > span:last-child {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.trade-event-row strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
 .unchecked {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
@@ -1491,7 +1636,8 @@ select:focus-visible {
   .ranking-header,
   .health-hero,
   .research-hero,
-  .regime-hero {
+  .regime-hero,
+  .trade-hero {
     min-height: 105px;
     padding: 15px;
   }
@@ -1515,6 +1661,24 @@ select:focus-visible {
   .regime-hero {
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .trade-hero {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .trade-hero h2 {
+    font-size: 18px;
+  }
+
+  .trade-card-grid {
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trade-event-row {
+    grid-template-columns: 70px minmax(86px, 1fr) minmax(100px, 1fr);
   }
 
   .regime-hero h2 {

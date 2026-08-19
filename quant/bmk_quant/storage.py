@@ -11,6 +11,7 @@ import pandas as pd
 
 from .pipeline import QuantResult
 from .research import HORIZONS, METHODOLOGY_VERSION, outcome_hash, score_bucket
+from .trades import calculate_trade_snapshot
 
 
 SCHEMA = """
@@ -102,6 +103,38 @@ CREATE TABLE IF NOT EXISTS local_forward_outcomes (
 );
 CREATE INDEX IF NOT EXISTS local_forward_outcomes_computed_run_idx
   ON local_forward_outcomes(computed_run_id);
+CREATE TABLE IF NOT EXISTS local_trade_publications (
+  run_id TEXT PRIMARY KEY,
+  methodology_version TEXT NOT NULL,
+  expected_states INTEGER NOT NULL,
+  state_payload_hash TEXT NOT NULL,
+  expected_events INTEGER NOT NULL,
+  event_payload_hash TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS local_trade_state_snapshots (
+  run_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  state TEXT NOT NULL,
+  trade_id TEXT,
+  row_hash TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  PRIMARY KEY (run_id, symbol),
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS local_trade_events (
+  event_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  trade_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  row_hash TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
+CREATE INDEX IF NOT EXISTS local_trade_events_run_idx
+  ON local_trade_events(run_id, event_type);
 """
 
 
@@ -253,6 +286,137 @@ class ResearchStore:
             outcomes = self._materialize_forward_outcomes(connection, result)
             connection.commit()
             return outcomes
+
+    def build_trade_artifacts(
+        self,
+        result: QuantResult,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        run_id = str(result.manifest["run_id"])
+        with sqlite3.connect(self.path) as connection:
+            connection.executescript(SCHEMA)
+            stored_run = connection.execute(
+                "SELECT payload_hash FROM local_quant_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if not stored_run or stored_run[0] != result.manifest["payload_hash"]:
+                raise RuntimeError("trade layer requires the matching immutable quant run")
+
+            prior_run = connection.execute(
+                """SELECT run_id FROM local_quant_runs
+                   WHERE market_date < ? ORDER BY market_date DESC LIMIT 1""",
+                (result.validation.market_date,),
+            ).fetchone()
+            prior_states: list[dict[str, Any]] = []
+            if prior_run:
+                prior_states = [
+                    json.loads(str(row[0]))
+                    for row in connection.execute(
+                        """SELECT record_json FROM local_trade_state_snapshots
+                           WHERE run_id = ? ORDER BY symbol""",
+                        (prior_run[0],),
+                    )
+                ]
+
+            expected_edges = {
+                (str(row[0]), str(row[1])): (int(row[2]), float(row[3]))
+                for row in connection.execute(
+                    """SELECT outcomes.score_bucket, regimes.regime_label,
+                              COUNT(*) AS sample_size,
+                              AVG(outcomes.forward_return) AS average_return
+                       FROM local_forward_outcomes outcomes
+                       JOIN local_market_regimes regimes
+                         ON regimes.run_id = outcomes.signal_run_id
+                       WHERE outcomes.horizon = 20
+                       GROUP BY outcomes.score_bucket, regimes.regime_label"""
+                )
+            }
+            states, events, manifest = calculate_trade_snapshot(
+                result,
+                prior_states,
+                expected_edges,
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO local_trade_publications
+                   (run_id, methodology_version, expected_states,
+                    state_payload_hash, expected_events, event_payload_hash,
+                    manifest_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    manifest["methodology_version"],
+                    manifest["expected_states"],
+                    manifest["state_payload_hash"],
+                    manifest["expected_events"],
+                    manifest["event_payload_hash"],
+                    json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.executemany(
+                """INSERT OR IGNORE INTO local_trade_state_snapshots
+                   (run_id, symbol, state, trade_id, row_hash, record_json)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        run_id,
+                        row["symbol"],
+                        row["state"],
+                        row["trade_id"],
+                        row["row_hash"],
+                        json.dumps(row, ensure_ascii=False, sort_keys=True),
+                    )
+                    for row in states
+                ],
+            )
+            connection.executemany(
+                """INSERT OR IGNORE INTO local_trade_events
+                   (event_id, run_id, symbol, trade_id, event_type, row_hash,
+                    record_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        row["event_id"],
+                        run_id,
+                        row["symbol"],
+                        row["trade_id"],
+                        row["event_type"],
+                        row["row_hash"],
+                        json.dumps(row, ensure_ascii=False, sort_keys=True),
+                    )
+                    for row in events
+                ],
+            )
+            stored_publication = connection.execute(
+                """SELECT methodology_version, expected_states,
+                          state_payload_hash, expected_events, event_payload_hash
+                   FROM local_trade_publications WHERE run_id = ?""",
+                (run_id,),
+            ).fetchone()
+            expected_publication = (
+                manifest["methodology_version"],
+                manifest["expected_states"],
+                manifest["state_payload_hash"],
+                manifest["expected_events"],
+                manifest["event_payload_hash"],
+            )
+            if stored_publication != expected_publication:
+                raise RuntimeError("conflicting immutable trade publication")
+            for row in states:
+                stored = connection.execute(
+                    """SELECT row_hash FROM local_trade_state_snapshots
+                       WHERE run_id = ? AND symbol = ?""",
+                    (run_id, row["symbol"]),
+                ).fetchone()
+                if not stored or stored[0] != row["row_hash"]:
+                    raise RuntimeError("conflicting immutable trade state")
+            for row in events:
+                stored = connection.execute(
+                    "SELECT row_hash FROM local_trade_events WHERE event_id = ?",
+                    (row["event_id"],),
+                ).fetchone()
+                if not stored or stored[0] != row["row_hash"]:
+                    raise RuntimeError("conflicting immutable trade event")
+            connection.commit()
+            return states, events, manifest
 
     @staticmethod
     def _materialize_forward_outcomes(

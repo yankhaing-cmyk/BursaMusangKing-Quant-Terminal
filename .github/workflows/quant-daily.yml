@@ -10,7 +10,7 @@ on:
         default: false
   schedule:
     # Dormant until ENABLE_SCHEDULED_QUANT=true. Malaysia is UTC+8 year-round.
-    - cron: "7 11 * * 1-5"
+    - cron: "47 11 * * 1-5"
 
 permissions:
   contents: read
@@ -41,7 +41,7 @@ jobs:
           key: bmk-tv-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             bmk-tv-${{ runner.os }}-
-      - name: Restore quant research and regime history
+      - name: Restore quant research, regime, and trade history
         uses: actions/cache/restore@v4
         with:
           path: artifacts/quant_history.sqlite
@@ -58,11 +58,6 @@ jobs:
           --cache-dir .cache/tradingview
           --bars 400
           --request-delay 0.12
-      - name: Save quant research and regime history
-        uses: actions/cache/save@v4
-        with:
-          path: artifacts/quant_history.sqlite
-          key: bmk-research-${{ runner.os }}-${{ github.run_id }}
       - name: Save anonymous TradingView history cache
         if: always()
         uses: actions/cache/save@v4
@@ -93,6 +88,16 @@ jobs:
           bmk-quant publish
           --artifacts artifacts/latest
           --api-base "$BMK_QUANT_API_BASE"
+      - name: Save verified quant research, regime, and trade history
+        if: >-
+          always() &&
+          ((github.event_name == 'workflow_dispatch' && inputs.publish) ||
+          (github.event_name == 'schedule' && vars.ENABLE_LIVE_PUBLISH == 'true')) &&
+          hashFiles('artifacts/latest/quant-publish-confirmed.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/quant_history.sqlite
+          key: bmk-research-${{ runner.os }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

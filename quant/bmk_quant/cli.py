@@ -42,8 +42,13 @@ def run_command(args: argparse.Namespace) -> int:
     )
     result = QuantPipeline(config).run(bundle)
     research_outcomes = []
+    trade_states = []
+    trade_events = []
     if args.history_db:
-        research_outcomes = ResearchStore(args.history_db).save(result)
+        store = ResearchStore(args.history_db)
+        research_outcomes = store.save(result)
+        trade_states, trade_events, trade_manifest = store.build_trade_artifacts(result)
+        result.manifest["trade"] = trade_manifest
         if archive:
             archive.save_checkpoint(
                 args.history_db,
@@ -51,7 +56,13 @@ def run_command(args: argparse.Namespace) -> int:
                 result.manifest["payload_hash"],
                 result.manifest,
             )
-    paths = write_artifacts(result, args.output, research_outcomes)
+    paths = write_artifacts(
+        result,
+        args.output,
+        research_outcomes,
+        trade_states,
+        trade_events,
+    )
     print(
         json.dumps(
             {
@@ -60,6 +71,8 @@ def run_command(args: argparse.Namespace) -> int:
                 "valid_symbols": len(result.records),
                 "payload_hash": result.manifest["payload_hash"],
                 "research_observations": len(research_outcomes),
+                "trade_states": len(trade_states),
+                "trade_events": len(trade_events),
                 "artifacts": {name: str(path) for name, path in paths.items()},
             },
             sort_keys=True,

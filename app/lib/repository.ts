@@ -8,6 +8,10 @@ import type {
   QuantRun,
   RankingQuery,
   ResearchSnapshot,
+  TradeEvent,
+  TradeSnapshot,
+  TradeState,
+  TradeStateName,
 } from "./types";
 import { RESEARCH_METHODOLOGY } from "./research-ingest";
 
@@ -342,6 +346,136 @@ export async function getResearchSnapshot(): Promise<ResearchSnapshot> {
         lastExitDate: String(row.last_exit_date),
         updatedAt: String(row.updated_at),
       })),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function mapTradeState(row: Record<string, unknown>): TradeState {
+  const nullable = (key: string) => row[key] === null || row[key] === undefined ? null : Number(row[key]);
+  return {
+    runId: String(row.run_id),
+    marketDate: String(row.market_date),
+    methodologyVersion: String(row.methodology_version),
+    symbol: String(row.symbol),
+    name: String(row.name),
+    sector: String(row.sector),
+    tradeId: row.trade_id ? String(row.trade_id) : null,
+    state: String(row.state) as TradeStateName,
+    signalDate: row.signal_date ? String(row.signal_date) : null,
+    signalScoreBucket: row.signal_score_bucket ? String(row.signal_score_bucket) : null,
+    entryDate: row.entry_date ? String(row.entry_date) : null,
+    exitDate: row.exit_date ? String(row.exit_date) : null,
+    entryPrice: nullable("entry_price"),
+    exitPrice: nullable("exit_price"),
+    peakClose: nullable("peak_close"),
+    lastClose: Number(row.last_close),
+    atr14: nullable("atr14"),
+    trailingStop: nullable("trailing_stop"),
+    stopDistancePct: nullable("stop_distance_pct"),
+    unrealizedReturn: nullable("unrealized_return"),
+    quantScore: Number(row.quant_score),
+    signalQuantScore: nullable("signal_quant_score"),
+    signalRank: row.signal_rank === null || row.signal_rank === undefined ? null : Number(row.signal_rank),
+    regimeLabel: String(row.regime_label) as MarketRegimeLabel,
+    expectedEdge20d: nullable("expected_edge_20d"),
+    edgeSampleSize: Number(row.edge_sample_size),
+    edgeConfidence: String(row.edge_confidence) as TradeState["edgeConfidence"],
+    reason: String(row.reason),
+  };
+}
+
+function mapTradeEvent(row: Record<string, unknown>): TradeEvent {
+  return {
+    eventId: String(row.event_id),
+    runId: String(row.run_id),
+    marketDate: String(row.market_date),
+    symbol: String(row.symbol),
+    name: String(row.name),
+    tradeId: String(row.trade_id),
+    eventType: String(row.event_type) as TradeEvent["eventType"],
+    priorState: String(row.prior_state) as TradeStateName,
+    newState: String(row.new_state) as TradeStateName,
+    eventPrice: row.event_price === null ? null : Number(row.event_price),
+    quantScore: Number(row.quant_score),
+    trailingStop: row.trailing_stop === null ? null : Number(row.trailing_stop),
+    reason: String(row.reason),
+  };
+}
+
+export async function getTradeSnapshot(): Promise<TradeSnapshot> {
+  const empty: TradeSnapshot = {
+    status: "AWAITING_RUN",
+    methodologyVersion: "trade-v1.0.0",
+    marketDate: null,
+    automaticExecution: false,
+    atrStopMultiple: 3,
+    nearStopAtrMultiple: 1,
+    stateCounts: { FLAT: 0, BUY_PENDING: 0, OPEN: 0, NEAR_SELL: 0, CLOSED: 0 },
+    states: [],
+    events: [],
+  };
+  const db = await dbBinding();
+  if (!db) return empty;
+  try {
+    const publication = await db
+      .prepare(
+        `SELECT tp.*, qr.market_date FROM app_state state
+         JOIN quant_runs qr ON qr.id = state.value
+         JOIN trade_publications tp ON tp.run_id = qr.id
+         WHERE state.key = 'active_run_id' AND qr.status = 'ACTIVE'
+           AND tp.status = 'ACTIVE' AND tp.automatic_execution = 0
+         LIMIT 1`,
+      )
+      .first<Record<string, unknown>>();
+    if (!publication) return empty;
+    const runId = String(publication.run_id);
+    const [states, events, counts] = await Promise.all([
+      db
+        .prepare(
+          `SELECT snapshot.*, instrument.name, instrument.sector
+           FROM trade_state_snapshots snapshot
+           JOIN instruments instrument ON instrument.symbol = snapshot.symbol
+           WHERE snapshot.run_id = ? AND snapshot.state <> 'FLAT'
+           ORDER BY CASE snapshot.state
+             WHEN 'NEAR_SELL' THEN 1 WHEN 'BUY_PENDING' THEN 2
+             WHEN 'OPEN' THEN 3 WHEN 'CLOSED' THEN 4 ELSE 5 END,
+             snapshot.stop_distance_pct ASC, snapshot.quant_score DESC`,
+        )
+        .bind(runId)
+        .all<Record<string, unknown>>(),
+      db
+        .prepare(
+          `SELECT event.*, instrument.name FROM trade_events event
+           JOIN instruments instrument ON instrument.symbol = event.symbol
+           WHERE event.run_id = ?
+           ORDER BY CASE event.event_type
+             WHEN 'EXIT' THEN 1 WHEN 'NEAR_SELL' THEN 2 WHEN 'ENTRY' THEN 3
+             WHEN 'SIGNAL' THEN 4 ELSE 5 END, event.symbol LIMIT 100`,
+        )
+        .bind(runId)
+        .all<Record<string, unknown>>(),
+      db
+        .prepare(
+          `SELECT state, COUNT(*) AS count FROM trade_state_snapshots
+           WHERE run_id = ? GROUP BY state`,
+        )
+        .bind(runId)
+        .all<{ state: TradeStateName; count: number }>(),
+    ]);
+    const stateCounts = { ...empty.stateCounts };
+    for (const row of counts.results) stateCounts[row.state] = Number(row.count);
+    return {
+      status: "ACTIVE",
+      methodologyVersion: String(publication.methodology_version),
+      marketDate: String(publication.market_date),
+      automaticExecution: false,
+      atrStopMultiple: Number(publication.atr_stop_multiple),
+      nearStopAtrMultiple: Number(publication.near_stop_atr_multiple),
+      stateCounts,
+      states: states.results.map(mapTradeState),
+      events: events.results.map(mapTradeEvent),
     };
   } catch {
     return empty;

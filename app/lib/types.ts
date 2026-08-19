@@ -151,3 +151,66 @@ export type ResearchSnapshot = {
 export type ResearchRegimeStatistic = Omit<ResearchBucketStatistic, "scoreBucket"> & {
   regimeLabel: MarketRegimeLabel;
 };
+
+export type TradeStateName = "FLAT" | "BUY_PENDING" | "OPEN" | "NEAR_SELL" | "CLOSED";
+export type TradeEventType = "SIGNAL" | "ENTRY" | "NEAR_SELL" | "RECOVERED" | "EXIT";
+export type EdgeConfidence = "INSUFFICIENT" | "PROVISIONAL" | "ESTABLISHED";
+
+export type TradeState = {
+  runId: string;
+  marketDate: string;
+  methodologyVersion: string;
+  symbol: string;
+  name: string;
+  sector: string;
+  tradeId: string | null;
+  state: TradeStateName;
+  signalDate: string | null;
+  signalScoreBucket: string | null;
+  entryDate: string | null;
+  exitDate: string | null;
+  entryPrice: number | null;
+  exitPrice: number | null;
+  peakClose: number | null;
+  lastClose: number;
+  atr14: number | null;
+  trailingStop: number | null;
+  stopDistancePct: number | null;
+  unrealizedReturn: number | null;
+  quantScore: number;
+  signalQuantScore: number | null;
+  signalRank: number | null;
+  regimeLabel: MarketRegimeLabel;
+  expectedEdge20d: number | null;
+  edgeSampleSize: number;
+  edgeConfidence: EdgeConfidence;
+  reason: string;
+};
+
+export type TradeEvent = {
+  eventId: string;
+  runId: string;
+  marketDate: string;
+  symbol: string;
+  name: string;
+  tradeId: string;
+  eventType: TradeEventType;
+  priorState: TradeStateName;
+  newState: TradeStateName;
+  eventPrice: number | null;
+  quantScore: number;
+  trailingStop: number | null;
+  reason: string;
+};
+
+export type TradeSnapshot = {
+  status: "ACTIVE" | "AWAITING_RUN";
+  methodologyVersion: string;
+  marketDate: string | null;
+  automaticExecution: false;
+  atrStopMultiple: number;
+  nearStopAtrMultiple: number;
+  stateCounts: Record<TradeStateName, number>;
+  states: TradeState[];
+  events: TradeEvent[];
+};
