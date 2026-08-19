@@ -150,6 +150,63 @@ export const appState = sqliteTable("app_state", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const marketRegimes = sqliteTable(
+  "market_regimes",
+  {
+    runId: text("run_id")
+      .primaryKey()
+      .references(() => quantRuns.id, { onDelete: "cascade" }),
+    marketDate: text("market_date").notNull(),
+    methodologyVersion: text("methodology_version").notNull(),
+    regimeLabel: text("regime_label", {
+      enum: [
+        "STRONG RISK-ON",
+        "RISK-ON",
+        "NEUTRAL",
+        "RISK-OFF",
+        "STRONG RISK-OFF",
+      ],
+    }).notNull(),
+    regimeScore: real("regime_score").notNull(),
+    benchmarkClose: real("benchmark_close").notNull(),
+    benchmarkSma50: real("benchmark_sma50").notNull(),
+    benchmarkSma200: real("benchmark_sma200").notNull(),
+    benchmarkSma50Slope20: real("benchmark_sma50_slope20").notNull(),
+    benchmarkSma200Slope20: real("benchmark_sma200_slope20").notNull(),
+    benchmarkReturn20: real("benchmark_return20").notNull(),
+    benchmarkRealizedVolatility20: real("benchmark_realized_volatility20").notNull(),
+    breadthAbove20: real("breadth_above20").notNull(),
+    breadthAbove50: real("breadth_above50").notNull(),
+    breadthAbove200: real("breadth_above200").notNull(),
+    breadthMomentum: real("breadth_momentum").notNull(),
+    newHighRate: real("new_high_rate").notNull(),
+    newLowRate: real("new_low_rate").notNull(),
+    volumeParticipationRate: real("volume_participation_rate").notNull(),
+    sectorPositiveRate: real("sector_positive_rate").notNull(),
+    benchmarkTrendScore: real("benchmark_trend_score").notNull(),
+    breadthScore: real("breadth_score").notNull(),
+    sectorBreadthScore: real("sector_breadth_score").notNull(),
+    participationScore: real("participation_score").notNull(),
+    volatilityScore: real("volatility_score").notNull(),
+    minimumQuantScore: integer("minimum_quant_score").notNull(),
+    maxEquityExposure: real("max_equity_exposure").notNull(),
+    newPositionSizeMultiplier: real("new_position_size_multiplier").notNull(),
+    minimumCashAllocation: real("minimum_cash_allocation").notNull(),
+    maxNewEntries: integer("max_new_entries").notNull(),
+    trendWeightMultiplier: real("trend_weight_multiplier").notNull(),
+    explanationJson: text("explanation_json").notNull(),
+    rowHash: text("row_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("market_regimes_date_methodology_uq").on(
+      table.marketDate,
+      table.methodologyVersion,
+    ),
+    index("market_regimes_label_date_idx").on(table.regimeLabel, table.marketDate),
+  ],
+);
+
 export const researchPublications = sqliteTable(
   "research_publications",
   {
@@ -223,4 +280,26 @@ export const researchBucketStats = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.scoreBucket, table.horizon] })],
+);
+
+export const researchRegimeStats = sqliteTable(
+  "research_regime_stats",
+  {
+    regimeLabel: text("regime_label").notNull(),
+    horizon: integer("horizon").notNull(),
+    sampleSize: integer("sample_size").notNull(),
+    averageReturn: real("average_return").notNull(),
+    medianReturn: real("median_return").notNull(),
+    winRate: real("win_rate").notNull(),
+    averageMae: real("average_mae").notNull(),
+    averageMfe: real("average_mfe").notNull(),
+    standardError: real("standard_error"),
+    confidenceLow: real("confidence_low"),
+    confidenceHigh: real("confidence_high"),
+    profitFactor: real("profit_factor"),
+    firstSignalDate: text("first_signal_date").notNull(),
+    lastExitDate: text("last_exit_date").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.regimeLabel, table.horizon] })],
 );

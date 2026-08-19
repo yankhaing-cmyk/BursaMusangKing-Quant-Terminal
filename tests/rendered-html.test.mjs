@@ -39,6 +39,7 @@ test("renders development preview metadata", async () => {
   assert.match(html, /Illustrative interface only/i);
   assert.match(html, /Run full Bursa screening/i);
   assert.match(html, />Research</i);
+  assert.match(html, />Regime</i);
 });
 
 test("owner health API fails closed without an active D1 run", async () => {
@@ -75,6 +76,7 @@ test("owner research API starts empty and never invents expected edge", async ()
   assert.equal(body.observationCount, 0);
   assert.equal(body.minimumSample, 30);
   assert.deepEqual(body.statistics, []);
+  assert.deepEqual(body.regimeStatistics, []);
 });
 
 test("manual Run API rejects unauthenticated requests", async () => {

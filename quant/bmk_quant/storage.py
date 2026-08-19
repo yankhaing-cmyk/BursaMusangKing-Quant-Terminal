@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS local_daily_scores (
   PRIMARY KEY (run_id, symbol),
   FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
 );
+CREATE TABLE IF NOT EXISTS local_market_regimes (
+  run_id TEXT PRIMARY KEY,
+  market_date TEXT NOT NULL,
+  methodology_version TEXT NOT NULL,
+  regime_label TEXT NOT NULL,
+  regime_score REAL NOT NULL,
+  row_hash TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  UNIQUE (market_date, methodology_version),
+  FOREIGN KEY (run_id) REFERENCES local_quant_runs(run_id)
+);
 CREATE TABLE IF NOT EXISTS local_forward_outcomes (
   signal_run_id TEXT NOT NULL,
   symbol TEXT NOT NULL,
@@ -215,6 +226,30 @@ class ResearchStore:
                     for record in result.records
                 ],
             )
+            regime_json = json.dumps(
+                result.regime, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO local_market_regimes
+                   (run_id, market_date, methodology_version, regime_label,
+                    regime_score, row_hash, record_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    result.validation.market_date,
+                    result.regime["methodology_version"],
+                    result.regime["regime_label"],
+                    result.regime["regime_score"],
+                    result.regime["row_hash"],
+                    regime_json,
+                ),
+            )
+            stored_regime = connection.execute(
+                "SELECT row_hash FROM local_market_regimes WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if not stored_regime or stored_regime[0] != result.regime["row_hash"]:
+                raise RuntimeError("conflicting immutable market regime")
             outcomes = self._materialize_forward_outcomes(connection, result)
             connection.commit()
             return outcomes

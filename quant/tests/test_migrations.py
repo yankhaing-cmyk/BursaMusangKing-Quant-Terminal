@@ -28,7 +28,17 @@ class MigrationTests(unittest.TestCase):
                         "SELECT name FROM sqlite_master WHERE type='table'"
                     ).fetchall()
                 }
-                self.assertTrue({"quant_runs", "daily_scores", "instruments", "app_state"} <= tables)
+                self.assertTrue(
+                    {
+                        "quant_runs",
+                        "daily_scores",
+                        "instruments",
+                        "app_state",
+                        "market_regimes",
+                        "research_regime_stats",
+                    }
+                    <= tables
+                )
             finally:
                 connection.close()
 

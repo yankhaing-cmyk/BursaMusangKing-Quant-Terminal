@@ -41,7 +41,7 @@ jobs:
           key: bmk-tv-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             bmk-tv-${{ runner.os }}-
-      - name: Restore Phase 2 research history
+      - name: Restore quant research and regime history
         uses: actions/cache/restore@v4
         with:
           path: artifacts/quant_history.sqlite
@@ -58,7 +58,7 @@ jobs:
           --cache-dir .cache/tradingview
           --bars 400
           --request-delay 0.12
-      - name: Save Phase 2 research history
+      - name: Save quant research and regime history
         uses: actions/cache/save@v4
         with:
           path: artifacts/quant_history.sqlite

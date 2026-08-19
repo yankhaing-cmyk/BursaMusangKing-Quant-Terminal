@@ -8,6 +8,7 @@ import {
   readJson,
   requiredDatabase,
 } from "@/app/lib/ingest";
+import { validateRegime, type RegimePayload } from "@/app/lib/regime-ingest";
 
 type StartPayload = {
   run_id: string;
@@ -27,6 +28,7 @@ type StartPayload = {
     field?: string | null;
     detail: string;
   }>;
+  regime: RegimePayload;
 };
 
 export async function POST(request: Request) {
@@ -64,6 +66,15 @@ export async function POST(request: Request) {
     if (body.validation?.critical_count !== 0) {
       return errorResponse("critical_validation_issue", 422);
     }
+    if (
+      !body.regime ||
+      body.regime.run_id !== body.run_id ||
+      body.regime.market_date !== body.market_date
+    ) {
+      return errorResponse("regime_run_or_date_mismatch", 422);
+    }
+    const regimeError = await validateRegime(body.regime);
+    if (regimeError) return errorResponse(regimeError, 422);
     const issues = body.issues ?? [];
     if (issues.length > 100 || issues.some((issue) => issue.severity === "CRITICAL")) {
       return errorResponse("critical_or_excessive_issues", 422);
@@ -80,6 +91,13 @@ export async function POST(request: Request) {
     }
     if (latestActive?.market_date === body.market_date) {
       if (latestActive.payload_hash === body.payload_hash) {
+        const activeRegime = await db
+          .prepare("SELECT row_hash FROM market_regimes WHERE run_id = ? LIMIT 1")
+          .bind(latestActive.id)
+          .first<{ row_hash: string }>();
+        if (activeRegime?.row_hash !== body.regime.row_hash) {
+          return errorResponse("active_run_missing_or_conflicting_regime", 409);
+        }
         return Response.json({
           ok: true,
           status: "already_active",
@@ -113,6 +131,63 @@ export async function POST(request: Request) {
       )
       .run();
 
+    await db
+      .prepare(
+        `INSERT INTO market_regimes
+         (run_id, market_date, methodology_version, regime_label, regime_score,
+          benchmark_close, benchmark_sma50, benchmark_sma200,
+          benchmark_sma50_slope20, benchmark_sma200_slope20,
+          benchmark_return20, benchmark_realized_volatility20,
+          breadth_above20, breadth_above50, breadth_above200, breadth_momentum,
+          new_high_rate, new_low_rate, volume_participation_rate,
+          sector_positive_rate, benchmark_trend_score, breadth_score,
+          sector_breadth_score, participation_score, volatility_score,
+          minimum_quant_score, max_equity_exposure,
+          new_position_size_multiplier, minimum_cash_allocation,
+          max_new_entries, trend_weight_multiplier, explanation_json,
+          row_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(run_id) DO NOTHING`,
+      )
+      .bind(
+        body.regime.run_id,
+        body.regime.market_date,
+        body.regime.methodology_version,
+        body.regime.regime_label,
+        body.regime.regime_score,
+        body.regime.benchmark_close,
+        body.regime.benchmark_sma50,
+        body.regime.benchmark_sma200,
+        body.regime.benchmark_sma50_slope20,
+        body.regime.benchmark_sma200_slope20,
+        body.regime.benchmark_return20,
+        body.regime.benchmark_realized_volatility20,
+        body.regime.breadth_above20,
+        body.regime.breadth_above50,
+        body.regime.breadth_above200,
+        body.regime.breadth_momentum,
+        body.regime.new_high_rate,
+        body.regime.new_low_rate,
+        body.regime.volume_participation_rate,
+        body.regime.sector_positive_rate,
+        body.regime.benchmark_trend_score,
+        body.regime.breadth_score,
+        body.regime.sector_breadth_score,
+        body.regime.participation_score,
+        body.regime.volatility_score,
+        body.regime.minimum_quant_score,
+        body.regime.max_equity_exposure,
+        body.regime.new_position_size_multiplier,
+        body.regime.minimum_cash_allocation,
+        body.regime.max_new_entries,
+        body.regime.trend_weight_multiplier,
+        JSON.stringify(body.regime.explanation),
+        body.regime.row_hash,
+        new Date().toISOString(),
+      )
+      .run();
+
     const stored = await db
       .prepare("SELECT * FROM quant_runs WHERE id = ? LIMIT 1")
       .bind(body.run_id)
@@ -124,6 +199,17 @@ export async function POST(request: Request) {
       stored.status !== "PENDING"
     ) {
       return errorResponse("run_id_conflict", 409);
+    }
+    const storedRegime = await db
+      .prepare("SELECT row_hash, market_date FROM market_regimes WHERE run_id = ? LIMIT 1")
+      .bind(body.run_id)
+      .first<{ row_hash: string; market_date: string }>();
+    if (
+      !storedRegime ||
+      storedRegime.row_hash !== body.regime.row_hash ||
+      storedRegime.market_date !== body.market_date
+    ) {
+      return errorResponse("regime_row_conflict", 409);
     }
 
     const issueStatements = [

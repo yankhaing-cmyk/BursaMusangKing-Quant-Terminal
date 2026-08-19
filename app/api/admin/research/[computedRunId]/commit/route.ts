@@ -4,7 +4,10 @@ import {
   requiredDatabase,
   sha256Hex,
 } from "@/app/lib/ingest";
-import { refreshResearchBucketStats } from "@/app/lib/research-ingest";
+import {
+  refreshResearchBucketStats,
+  refreshResearchRegimeStats,
+} from "@/app/lib/research-ingest";
 
 export async function POST(
   request: Request,
@@ -55,7 +58,19 @@ export async function POST(
       )
       .bind(computedRunId)
       .all<{ score_bucket: string; horizon: number }>();
-    await refreshResearchBucketStats(db, groups.results);
+    const regimeGroups = await db
+      .prepare(
+        `SELECT DISTINCT regime.regime_label, outcome.horizon
+         FROM forward_outcomes outcome
+         JOIN market_regimes regime ON regime.run_id = outcome.signal_run_id
+         WHERE outcome.computed_run_id = ?`,
+      )
+      .bind(computedRunId)
+      .all<{ regime_label: string; horizon: number }>();
+    await Promise.all([
+      refreshResearchBucketStats(db, groups.results),
+      refreshResearchRegimeStats(db, regimeGroups.results),
+    ]);
     const committedAt = new Date().toISOString();
     await db.batch([
       db

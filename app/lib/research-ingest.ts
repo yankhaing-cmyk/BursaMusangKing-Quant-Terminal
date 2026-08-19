@@ -161,3 +161,91 @@ export async function refreshResearchBucketStats(
       .run();
   }
 }
+
+export async function refreshResearchRegimeStats(
+  db: D1Database,
+  groups: Array<{ regime_label: string; horizon: number }>,
+): Promise<void> {
+  const unique = new Map(groups.map((group) => [`${group.regime_label}:${group.horizon}`, group]));
+  const updatedAt = new Date().toISOString();
+  for (const group of unique.values()) {
+    const summary = await db
+      .prepare(
+        `SELECT COUNT(*) AS sample_size,
+                AVG(outcome.forward_return) AS average_return,
+                AVG(outcome.mae) AS average_mae,
+                AVG(outcome.mfe) AS average_mfe,
+                SUM(outcome.forward_return * outcome.forward_return) AS sum_squares,
+                SUM(CASE WHEN outcome.forward_return > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN outcome.forward_return > 0 THEN outcome.forward_return ELSE 0 END) AS gross_profit,
+                SUM(CASE WHEN outcome.forward_return < 0 THEN -outcome.forward_return ELSE 0 END) AS gross_loss,
+                MIN(outcome.signal_date) AS first_signal_date,
+                MAX(outcome.exit_date) AS last_exit_date
+         FROM forward_outcomes outcome
+         JOIN market_regimes regime ON regime.run_id = outcome.signal_run_id
+         WHERE regime.regime_label = ? AND outcome.horizon = ?`,
+      )
+      .bind(group.regime_label, group.horizon)
+      .first<Record<string, number | string | null>>();
+    const median = await db
+      .prepare(
+        `WITH ordered AS (
+           SELECT outcome.forward_return,
+                  ROW_NUMBER() OVER (ORDER BY outcome.forward_return) AS row_number,
+                  COUNT(*) OVER () AS total_rows
+           FROM forward_outcomes outcome
+           JOIN market_regimes regime ON regime.run_id = outcome.signal_run_id
+           WHERE regime.regime_label = ? AND outcome.horizon = ?
+         )
+         SELECT AVG(forward_return) AS median_return FROM ordered
+         WHERE row_number IN ((total_rows + 1) / 2, (total_rows + 2) / 2)`,
+      )
+      .bind(group.regime_label, group.horizon)
+      .first<{ median_return: number | null }>();
+    const sampleSize = Number(summary?.sample_size ?? 0);
+    if (!sampleSize || median?.median_return === null || median?.median_return === undefined) continue;
+    const average = Number(summary?.average_return ?? 0);
+    const sumSquares = Number(summary?.sum_squares ?? 0);
+    const variance = sampleSize > 1
+      ? Math.max(0, (sumSquares - sampleSize * average * average) / (sampleSize - 1))
+      : 0;
+    const standardError = sampleSize > 1 ? Math.sqrt(variance / sampleSize) : null;
+    const confidenceWidth = standardError === null ? null : 1.96 * standardError;
+    const grossLoss = Number(summary?.gross_loss ?? 0);
+    const profitFactor = grossLoss > 0 ? Number(summary?.gross_profit ?? 0) / grossLoss : null;
+    await db
+      .prepare(
+        `INSERT INTO research_regime_stats
+         (regime_label, horizon, sample_size, average_return, median_return,
+          win_rate, average_mae, average_mfe, standard_error, confidence_low,
+          confidence_high, profit_factor, first_signal_date, last_exit_date, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(regime_label, horizon) DO UPDATE SET
+           sample_size=excluded.sample_size, average_return=excluded.average_return,
+           median_return=excluded.median_return, win_rate=excluded.win_rate,
+           average_mae=excluded.average_mae, average_mfe=excluded.average_mfe,
+           standard_error=excluded.standard_error, confidence_low=excluded.confidence_low,
+           confidence_high=excluded.confidence_high, profit_factor=excluded.profit_factor,
+           first_signal_date=excluded.first_signal_date, last_exit_date=excluded.last_exit_date,
+           updated_at=excluded.updated_at`,
+      )
+      .bind(
+        group.regime_label,
+        group.horizon,
+        sampleSize,
+        average,
+        Number(median.median_return),
+        Number(summary?.wins ?? 0) / sampleSize,
+        Number(summary?.average_mae ?? 0),
+        Number(summary?.average_mfe ?? 0),
+        standardError,
+        confidenceWidth === null ? null : average - confidenceWidth,
+        confidenceWidth === null ? null : average + confidenceWidth,
+        profitFactor,
+        String(summary?.first_signal_date ?? ""),
+        String(summary?.last_exit_date ?? ""),
+        updatedAt,
+      )
+      .run();
+  }
+}

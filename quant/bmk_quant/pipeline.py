@@ -11,6 +11,7 @@ from .canonical import payload_hash, row_hash
 from .config import MODEL_VERSION, QuantConfig
 from .factors import calculate_raw_factors
 from .models import MarketDataBundle, ValidationError, ValidationReport
+from .regime import calculate_market_regime
 from .scoring import calculate_scores, validate_scores
 from .validation import normalize_bundle, validate_bundle
 
@@ -32,6 +33,7 @@ class QuantResult:
     validation: ValidationReport
     raw_factors: pd.DataFrame
     scores: pd.DataFrame
+    regime: dict[str, Any]
     instruments: tuple[dict[str, Any], ...]
     records: tuple[dict[str, Any], ...]
     manifest: dict[str, Any]
@@ -139,6 +141,7 @@ class QuantPipeline:
         records = tuple(_record(row) for _, row in scores.iterrows())
         digest = payload_hash(list(records))
         run_id = f"qv1-{report.market_date.replace('-', '')}-{digest[:16]}"
+        regime = calculate_market_regime(normalized, report, raw, run_id)
         instruments = _instrument_records(normalized, report.valid_symbols, report.market_date)
         warnings = [issue.as_dict() for issue in report.issues if issue.severity == "WARNING"]
         manifest: dict[str, Any] = {
@@ -159,6 +162,7 @@ class QuantPipeline:
             "issues": warnings[:100],
             "issue_count_total": len(warnings),
             "weights": self.config.weights,
+            "regime": regime,
             "automated_publication_approved": False,
         }
         return QuantResult(
@@ -166,8 +170,8 @@ class QuantPipeline:
             validation=report,
             raw_factors=raw,
             scores=scores,
+            regime=regime,
             instruments=instruments,
             records=records,
             manifest=manifest,
         )
-

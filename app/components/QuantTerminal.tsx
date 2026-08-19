@@ -8,7 +8,7 @@ import type {
   ResearchSnapshot,
 } from "@/app/lib/types";
 
-type Tab = "today" | "ranking" | "research" | "health";
+type Tab = "today" | "ranking" | "regime" | "research" | "health";
 type Sort = NonNullable<RankingQuery["sort"]>;
 
 const RUN_GATEWAY_URL = "https://bursa-quant-run-gateway.yankhaing.workers.dev/run";
@@ -56,6 +56,14 @@ function scoreTone(score: number): string {
   if (score >= 70) return "score-strong";
   if (score >= 55) return "score-neutral";
   return "score-weak";
+}
+
+function regimeTone(label: string): string {
+  if (label === "STRONG RISK-ON") return "regime-strong-on";
+  if (label === "RISK-ON") return "regime-on";
+  if (label === "RISK-OFF") return "regime-off";
+  if (label === "STRONG RISK-OFF") return "regime-strong-off";
+  return "regime-neutral";
 }
 
 function ScoreBadge({ value, large = false }: { value: number; large?: boolean }) {
@@ -176,9 +184,11 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
           <small>Cross-sectional score</small>
         </article>
         <article className="metric-card">
-          <span>BENCHMARK</span>
-          <strong className="metric-word">FBM KLCI</strong>
-          <small>{live ? snapshot.run.benchmarkDate : "Awaiting data"}</small>
+          <span>MARKET REGIME</span>
+          <strong className={`metric-word ${snapshot.marketRegime ? regimeTone(snapshot.marketRegime.label) : ""}`}>
+            {live ? snapshot.marketRegime?.label ?? "AWAITING RUN" : "—"}
+          </strong>
+          <small>{snapshot.marketRegime ? `Score ${snapshot.marketRegime.score.toFixed(1)}` : "Phase 3 gate"}</small>
         </article>
       </section>
 
@@ -226,6 +236,7 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
             <div><span>Required benchmark</span><strong>FBMKLCI</strong></div>
             <div><span>Partial publish</span><strong className="negative">BLOCKED</strong></div>
             <div><span>ML layer</span><strong>OFF</strong></div>
+            <div><span>Regime model</span><strong>{snapshot.marketRegime ? "ACTIVE" : "AWAITING RUN"}</strong></div>
           </div>
         </article>
         <article className="panel compact-panel">
@@ -240,6 +251,94 @@ function TodayView({ snapshot, onInspect }: { snapshot: DashboardSnapshot; onIns
             The forward-outcome collector is active. Estimates remain hidden until each score bucket has a sufficient real sample.
           </p>
         </article>
+      </section>
+    </div>
+  );
+}
+
+function RegimeView({ snapshot }: { snapshot: DashboardSnapshot }) {
+  const regime = snapshot.marketRegime;
+  const live = snapshot.mode === "LIVE";
+  if (!regime) {
+    return (
+      <div className="view-stack">
+        {!live && <EmptyLiveNotice />}
+        <section className="research-hero regime-empty">
+          <div>
+            <p className="section-kicker">PHASE 3 · MARKET REGIME</p>
+            <h2>Awaiting the next verified screening run</h2>
+            <p className="muted">
+              Existing rankings remain valid. A regime will appear only when KLCI trend, full-universe breadth,
+              sector breadth, participation and volatility pass together.
+            </p>
+          </div>
+          <span className="research-state">FAIL CLOSED</span>
+        </section>
+      </div>
+    );
+  }
+  const components = [
+    ["KLCI trend", regime.benchmarkTrendScore, "35%"],
+    ["Market breadth", regime.breadthScore, "35%"],
+    ["Sector breadth", regime.sectorBreadthScore, "10%"],
+    ["Participation", regime.participationScore, "10%"],
+    ["Volatility", regime.volatilityScore, "10%"],
+  ] as const;
+  return (
+    <div className="view-stack">
+      {!live && <EmptyLiveNotice />}
+      <section className={`regime-hero ${regimeTone(regime.label)}`}>
+        <div>
+          <p className="section-kicker">PHASE 3 · MARKET REGIME</p>
+          <h2>{regime.label}</h2>
+          <p className="muted">
+            Point-in-time Bursa state for {regime.marketDate}. Guidance is risk control, not an order to trade.
+          </p>
+        </div>
+        <div className="regime-score"><span>REGIME SCORE</span><strong>{regime.score.toFixed(1)}</strong></div>
+      </section>
+
+      <section className="metric-grid" aria-label="Regime policy guidance">
+        <article className="metric-card"><span>MIN QUANT SCORE</span><strong>{regime.minimumQuantScore}</strong><small>New candidate threshold</small></article>
+        <article className="metric-card"><span>MAX EXPOSURE</span><strong>{formatPercent(regime.maxEquityExposure)}</strong><small>Portfolio ceiling</small></article>
+        <article className="metric-card"><span>CASH FLOOR</span><strong>{formatPercent(regime.minimumCashAllocation)}</strong><small>Minimum allocation</small></article>
+        <article className="metric-card"><span>NEW POSITION</span><strong>{regime.newPositionSizeMultiplier.toFixed(2)}×</strong><small>Rule-based size multiplier</small></article>
+      </section>
+
+      <section className="two-column regime-columns">
+        <article className="panel">
+          <div className="panel-heading"><div><p className="section-kicker">MODEL BRIDGE</p><h2>Five transparent components</h2></div><span className="phase-pill">NO ML</span></div>
+          <div className="regime-components">
+            {components.map(([label, value, weight]) => (
+              <div className="bridge-row" key={label}>
+                <span>{label}<small>{weight}</small></span><MiniBar value={value} /><strong>{value.toFixed(1)}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="panel">
+          <div className="panel-heading"><div><p className="section-kicker">MARKET EVIDENCE</p><h2>Breadth and risk</h2></div></div>
+          <div className="health-list regime-evidence">
+            <div><span>Stocks above 20DMA</span><strong>{formatPercent(regime.breadthAbove20)}</strong></div>
+            <div><span>Stocks above 50DMA</span><strong>{formatPercent(regime.breadthAbove50)}</strong></div>
+            <div><span>Stocks above 200DMA</span><strong>{formatPercent(regime.breadthAbove200)}</strong></div>
+            <div><span>Positive sector breadth</span><strong>{formatPercent(regime.sectorPositiveRate)}</strong></div>
+            <div><span>Volume participation</span><strong>{formatPercent(regime.volumeParticipationRate)}</strong></div>
+            <div><span>New highs / lows</span><strong>{formatPercent(regime.newHighRate)} / {formatPercent(regime.newLowRate)}</strong></div>
+            <div><span>KLCI 20D return</span><strong>{formatPercent(regime.benchmarkReturn20)}</strong></div>
+            <div><span>KLCI realized volatility</span><strong>{formatPercent(regime.benchmarkRealizedVolatility20)}</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section className="panel compact-panel regime-policy-panel">
+        <div className="panel-heading"><div><p className="section-kicker">RISK POLICY</p><h2>Regime-aware operating limits</h2></div><span className="panel-meta">{regime.methodologyVersion}</span></div>
+        <div className="acceptance-grid regime-policy-grid">
+          <div><span>New entries</span><strong>{regime.maxNewEntries} maximum</strong></div>
+          <div><span>Trend emphasis</span><strong>{regime.trendWeightMultiplier.toFixed(2)}× research modifier</strong></div>
+          <div><span>Quant Score formula</span><strong>UNCHANGED</strong></div>
+          <div><span>Automatic execution</span><strong className="negative">OFF</strong></div>
+        </div>
       </section>
     </div>
   );
@@ -519,6 +618,34 @@ function ResearchView({ research }: { research: ResearchSnapshot }) {
         </div>
       </section>
 
+      <section className="panel research-panel">
+        <div className="panel-heading">
+          <div><p className="section-kicker">REGIME MATRIX</p><h2>Forward outcomes by market state</h2></div>
+          <span className="phase-pill">PHASE 3</span>
+        </div>
+        <div className="research-table regime-research-table" role="table" aria-label="Market regime forward outcome statistics">
+          <div className="research-row research-header" role="row">
+            <span role="columnheader">REGIME</span>
+            {researchHorizons.map((horizon) => <span role="columnheader" key={horizon}>{horizon}D</span>)}
+          </div>
+          {["STRONG RISK-ON", "RISK-ON", "NEUTRAL", "RISK-OFF", "STRONG RISK-OFF"].map((label) => (
+            <div className="research-row" role="row" key={label}>
+              <strong className={regimeTone(label)} role="rowheader">{label}</strong>
+              {researchHorizons.map((horizon) => {
+                const row = research.regimeStatistics.find(
+                  (item) => item.regimeLabel === label && item.horizon === horizon,
+                );
+                if (!row || row.sampleSize < research.minimumSample) {
+                  return <span className="research-cell collecting" role="cell" key={horizon}><strong>COLLECTING</strong><small>n={row?.sampleSize ?? 0}</small></span>;
+                }
+                const tone = row.sampleSize >= research.establishedSample ? "established" : "provisional";
+                return <span className={`research-cell ${tone}`} role="cell" key={horizon}><strong>{formatPercent(row.averageReturn)}</strong><small>{(row.winRate * 100).toFixed(0)}% win · n={row.sampleSize}</small></span>;
+              })}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="two-column">
         <article className="panel compact-panel">
           <div className="panel-heading"><div><p className="section-kicker">CONFIDENCE POLICY</p><h2>Evidence before estimates</h2></div></div>
@@ -720,12 +847,14 @@ export function QuantTerminal({
       <main className="terminal-main">
         {tab === "today" && <TodayView snapshot={snapshot} onInspect={setSelected} />}
         {tab === "ranking" && <RankingView snapshot={snapshot} onInspect={setSelected} query={query} setQuery={setQuery} page={page} setPage={setPage} loading={loading} />}
+        {tab === "regime" && <RegimeView snapshot={snapshot} />}
         {tab === "research" && <ResearchView research={initialResearch} />}
         {tab === "health" && <HealthView snapshot={snapshot} />}
       </main>
       <nav className="bottom-nav" aria-label="Primary navigation">
         <button type="button" className={tab === "today" ? "active" : ""} onClick={() => setTab("today")}><span aria-hidden="true">◫</span><strong>Today</strong></button>
         <button type="button" className={tab === "ranking" ? "active" : ""} onClick={() => setTab("ranking")}><span aria-hidden="true">≡</span><strong>Ranking</strong></button>
+        <button type="button" className={tab === "regime" ? "active" : ""} onClick={() => setTab("regime")}><span aria-hidden="true">◉</span><strong>Regime</strong></button>
         <button type="button" className={tab === "research" ? "active" : ""} onClick={() => setTab("research")}><span aria-hidden="true">∿</span><strong>Research</strong></button>
         <button type="button" className={tab === "health" ? "active" : ""} onClick={() => setTab("health")}><span aria-hidden="true">◇</span><strong>Health</strong></button>
       </nav>

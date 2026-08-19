@@ -4,6 +4,7 @@ import {
   requiredDatabase,
   sha256Hex,
 } from "@/app/lib/ingest";
+import { validateRegime, type RegimePayload } from "@/app/lib/regime-ingest";
 
 export async function POST(
   request: Request,
@@ -22,6 +23,23 @@ export async function POST(
       return Response.json({ ok: true, status: "already_active", run_id: runId });
     }
     if (run.status !== "PENDING") return errorResponse("run_not_pending", 409);
+
+    const regimeRow = await db
+      .prepare("SELECT * FROM market_regimes WHERE run_id = ? LIMIT 1")
+      .bind(runId)
+      .first<Record<string, unknown>>();
+    let regimeError = "missing_market_regime";
+    if (regimeRow) {
+      try {
+        regimeError =
+          (await validateRegime({
+            ...regimeRow,
+            explanation: JSON.parse(String(regimeRow.explanation_json)),
+          } as unknown as RegimePayload)) ?? "";
+      } catch {
+        regimeError = "invalid_regime_explanation_json";
+      }
+    }
 
     const critical = await db
       .prepare(
@@ -42,6 +60,8 @@ export async function POST(
     );
     const invalid =
       Number(critical?.count ?? 0) > 0 ||
+      Boolean(regimeError) ||
+      String(regimeRow?.market_date ?? "") !== String(run.market_date) ||
       received !== expected ||
       computedHash !== String(run.payload_hash) ||
       String(run.market_date) !== String(run.benchmark_date);

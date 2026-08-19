@@ -4,7 +4,7 @@ Standalone quantitative ranking and evidence-collection platform for the full Bu
 
 ## Current scope
 
-Phase 1 is implemented and the Phase 2 research foundation is active:
+Phases 1–3 are implemented; forward-outcome and market-regime evidence collection is active:
 
 - point-in-time daily OHLCV validation
 - mandatory FBM KLCI benchmark alignment
@@ -20,10 +20,14 @@ Phase 1 is implemented and the Phase 2 research foundation is active:
 - immutable MAE/MFE observations with checksum-verified research publication
 - score-bucket averages, medians, win rates, profit factors and 95% confidence intervals
 - sample-size policy that hides estimates below 30 observations
-- mobile-first Today, Ranking, Research, stock inspector and Health views
+- point-in-time Bursa regime classification using KLCI trend, breadth, sector participation, volume and volatility
+- five market states from `STRONG RISK-ON` through `STRONG RISK-OFF`
+- transparent regime-aware candidate thresholds, exposure ceilings, cash floors and size multipliers
+- regime-specific forward-outcome statistics with the same sample-size controls
+- mobile-first Today, Ranking, Regime, Research, stock inspector and Health views
 - dark/light mode and installable PWA shell
 
-Phase 2 does **not** claim an expected edge until real forward observations mature and pass the stated sample thresholds. The system still produces no buy/sell orders, position sizes, portfolio allocations or machine-learning predictions.
+Phase 2 does **not** claim an expected edge until real forward observations mature and pass the stated sample thresholds. Phase 3 policy values are research guidance only: they do not alter the fixed Quant Score, place orders, or size a live portfolio. The system still produces no buy/sell orders, portfolio allocations or machine-learning predictions.
 
 ## System boundary
 
@@ -31,7 +35,7 @@ Phase 2 does **not** claim an expected edge until real forward observations matu
 TradingView Malaysia scanner + anonymous daily history
         ↓
 GitHub Actions + Python
-validate → factors → Quant Score → forward outcomes → signed artifacts
+validate → factors → Quant Score → market regime → forward outcomes → signed artifacts
         ↓
 protected two-phase publish
         ↓
@@ -67,6 +71,7 @@ The initial weights are hypotheses, not proof of edge. Phase 2 measures them wit
 - `.github/workflows/` — CI plus gated manual/weekday quant workflow
 - `docs/PHASE1_ARCHITECTURE.md` — the complete 12-part architecture and acceptance criteria
 - `docs/PHASE2_RESEARCH.md` — forward-outcome methodology and confidence policy
+- `docs/PHASE3_REGIME.md` — market-regime formula, guidance matrix and validation gates
 - `docs/DATA_CONTRACT.md` — vendor-neutral source contract
 - `docs/DEPLOYMENT.md` — sequential Cloudflare Dashboard and GitHub setup
 

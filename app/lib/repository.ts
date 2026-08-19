@@ -2,6 +2,8 @@ import { demoSnapshot } from "./demo-data";
 import type {
   DashboardSnapshot,
   DataIssue,
+  MarketRegime,
+  MarketRegimeLabel,
   QuantRow,
   QuantRun,
   RankingQuery,
@@ -95,6 +97,44 @@ function mapRun(row: Record<string, unknown>): QuantRun {
   };
 }
 
+function mapRegime(row: Record<string, unknown>): MarketRegime {
+  const number = (key: string) => Number(row[key]);
+  return {
+    runId: String(row.run_id),
+    marketDate: String(row.market_date),
+    methodologyVersion: String(row.methodology_version),
+    label: String(row.regime_label) as MarketRegimeLabel,
+    score: number("regime_score"),
+    benchmarkClose: number("benchmark_close"),
+    benchmarkSma50: number("benchmark_sma50"),
+    benchmarkSma200: number("benchmark_sma200"),
+    benchmarkSma50Slope20: number("benchmark_sma50_slope20"),
+    benchmarkSma200Slope20: number("benchmark_sma200_slope20"),
+    benchmarkReturn20: number("benchmark_return20"),
+    benchmarkRealizedVolatility20: number("benchmark_realized_volatility20"),
+    breadthAbove20: number("breadth_above20"),
+    breadthAbove50: number("breadth_above50"),
+    breadthAbove200: number("breadth_above200"),
+    breadthMomentum: number("breadth_momentum"),
+    newHighRate: number("new_high_rate"),
+    newLowRate: number("new_low_rate"),
+    volumeParticipationRate: number("volume_participation_rate"),
+    sectorPositiveRate: number("sector_positive_rate"),
+    benchmarkTrendScore: number("benchmark_trend_score"),
+    breadthScore: number("breadth_score"),
+    sectorBreadthScore: number("sector_breadth_score"),
+    participationScore: number("participation_score"),
+    volatilityScore: number("volatility_score"),
+    minimumQuantScore: number("minimum_quant_score"),
+    maxEquityExposure: number("max_equity_exposure"),
+    newPositionSizeMultiplier: number("new_position_size_multiplier"),
+    minimumCashAllocation: number("minimum_cash_allocation"),
+    maxNewEntries: number("max_new_entries"),
+    trendWeightMultiplier: number("trend_weight_multiplier"),
+    explanation: parseJson<Record<string, string>>(row.explanation_json, {}),
+  };
+}
+
 export async function getDashboardSnapshot(
   query: RankingQuery = {},
 ): Promise<DashboardSnapshot> {
@@ -133,7 +173,7 @@ export async function getDashboardSnapshot(
     }
 
     const whereSql = where.join(" AND ");
-    const [rowsResult, countResult, sectorsResult, summaryResult, issuesResult] =
+    const [rowsResult, countResult, sectorsResult, summaryResult, issuesResult, regimeResult] =
       await Promise.all([
         db
           .prepare(
@@ -167,6 +207,10 @@ export async function getDashboardSnapshot(
           )
           .bind(run.id)
           .all<DataIssue>(),
+        db
+          .prepare("SELECT * FROM market_regimes WHERE run_id = ? LIMIT 1")
+          .bind(run.id)
+          .first<Record<string, unknown>>(),
       ]);
 
     return {
@@ -182,6 +226,7 @@ export async function getDashboardSnapshot(
           : Number(summaryResult.average_score),
       highScoreCount: Number(summaryResult?.high_count ?? 0),
       issues: issuesResult.results,
+      marketRegime: regimeResult ? mapRegime(regimeResult) : null,
     };
   } catch {
     return demoSnapshot;
@@ -220,11 +265,12 @@ export async function getResearchSnapshot(): Promise<ResearchSnapshot> {
     minimumSample: 30,
     establishedSample: 100,
     statistics: [],
+    regimeStatistics: [],
   };
   const db = await dbBinding();
   if (!db) return empty;
   try {
-    const [runs, observations, active, statistics] = await Promise.all([
+    const [runs, observations, active, statistics, regimeStatistics] = await Promise.all([
       db
         .prepare("SELECT COUNT(*) AS count FROM quant_runs WHERE status IN ('ACTIVE', 'SUPERSEDED')")
         .first<{ count: number }>(),
@@ -245,6 +291,14 @@ export async function getResearchSnapshot(): Promise<ResearchSnapshot> {
              WHEN '50-59' THEN 7 ELSE 8 END, horizon`,
         )
         .all<Record<string, unknown>>(),
+      db
+        .prepare(
+          `SELECT * FROM research_regime_stats
+           ORDER BY CASE regime_label
+             WHEN 'STRONG RISK-ON' THEN 1 WHEN 'RISK-ON' THEN 2
+             WHEN 'NEUTRAL' THEN 3 WHEN 'RISK-OFF' THEN 4 ELSE 5 END, horizon`,
+        )
+        .all<Record<string, unknown>>(),
     ]);
     return {
       methodologyVersion: active?.methodology_version ?? RESEARCH_METHODOLOGY,
@@ -256,6 +310,23 @@ export async function getResearchSnapshot(): Promise<ResearchSnapshot> {
       establishedSample: 100,
       statistics: statistics.results.map((row) => ({
         scoreBucket: String(row.score_bucket),
+        horizon: Number(row.horizon),
+        sampleSize: Number(row.sample_size),
+        averageReturn: Number(row.average_return),
+        medianReturn: Number(row.median_return),
+        winRate: Number(row.win_rate),
+        averageMae: Number(row.average_mae),
+        averageMfe: Number(row.average_mfe),
+        standardError: row.standard_error === null ? null : Number(row.standard_error),
+        confidenceLow: row.confidence_low === null ? null : Number(row.confidence_low),
+        confidenceHigh: row.confidence_high === null ? null : Number(row.confidence_high),
+        profitFactor: row.profit_factor === null ? null : Number(row.profit_factor),
+        firstSignalDate: String(row.first_signal_date),
+        lastExitDate: String(row.last_exit_date),
+        updatedAt: String(row.updated_at),
+      })),
+      regimeStatistics: regimeStatistics.results.map((row) => ({
+        regimeLabel: String(row.regime_label) as MarketRegimeLabel,
         horizon: Number(row.horizon),
         sampleSize: Number(row.sample_size),
         averageReturn: Number(row.average_return),

@@ -383,6 +383,52 @@ select:focus-visible {
   position: relative;
 }
 
+.regime-hero {
+  align-items: center;
+  background: linear-gradient(120deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--line);
+  border-left: 4px solid currentColor;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 126px;
+  padding: 20px;
+}
+
+.regime-hero h2 {
+  color: currentColor;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 25px;
+  margin: 7px 0 6px;
+}
+
+.regime-score {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+
+.regime-score span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.regime-score strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 35px;
+  letter-spacing: -0.06em;
+  margin-top: 7px;
+}
+
+.regime-strong-on { color: var(--green) !important; }
+.regime-on { color: color-mix(in srgb, var(--green) 70%, var(--cyan)) !important; }
+.regime-neutral { color: var(--accent) !important; }
+.regime-off { color: color-mix(in srgb, var(--red) 72%, var(--accent)) !important; }
+.regime-strong-off { color: var(--red) !important; }
+
 .research-hero {
   align-items: center;
   background:
@@ -1103,6 +1149,41 @@ select:focus-visible {
   color: var(--green);
 }
 
+.regime-research-table {
+  min-width: 760px;
+}
+
+.regime-research-table .research-row {
+  grid-template-columns: 140px repeat(4, minmax(125px, 1fr));
+}
+
+.regime-research-table .research-row > strong {
+  font-size: 10px;
+  text-align: center;
+}
+
+.regime-components {
+  border-top: 1px solid var(--line);
+}
+
+.regime-components .bridge-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.regime-evidence strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.regime-policy-grid > div {
+  justify-content: space-between;
+}
+
+.regime-policy-grid strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
 .unchecked {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
@@ -1134,7 +1215,8 @@ select:focus-visible {
   color: var(--faint);
   cursor: pointer;
   display: flex;
-  flex: 0 1 150px;
+  flex: 1 1 0;
+  max-width: 150px;
   flex-direction: column;
   font-size: 15px;
   gap: 3px;
@@ -1408,7 +1490,8 @@ select:focus-visible {
   .status-hero,
   .ranking-header,
   .health-hero,
-  .research-hero {
+  .research-hero,
+  .regime-hero {
     min-height: 105px;
     padding: 15px;
   }
@@ -1429,6 +1512,23 @@ select:focus-visible {
     gap: 12px;
   }
 
+  .regime-hero {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .regime-hero h2 {
+    font-size: 19px;
+  }
+
+  .regime-score {
+    min-width: 76px;
+  }
+
+  .regime-score strong {
+    font-size: 27px;
+  }
+
   .research-metrics {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1439,6 +1539,10 @@ select:focus-visible {
 
   .research-table {
     min-width: 620px;
+  }
+
+  .regime-research-table {
+    min-width: 700px;
   }
 
   .muted {
