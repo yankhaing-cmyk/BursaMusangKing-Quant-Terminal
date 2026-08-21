@@ -58,6 +58,28 @@ export type ScorePayload = {
   row_hash: string;
 };
 
+let runtimeSchemaPromise: Promise<void> | null = null;
+
+async function ensureRuntimeSchema(db: D1Database): Promise<void> {
+  if (!runtimeSchemaPromise) {
+    runtimeSchemaPromise = (async () => {
+      // market_regimes is already keyed by run_id. A global unique date/methodology
+      // index prevents safe retries because REJECTED runs are retained for audit.
+      // Active-run uniqueness is enforced by the publish transaction instead.
+      await db.prepare("DROP INDEX IF EXISTS market_regimes_date_methodology_uq").run();
+      await db
+        .prepare(
+          "CREATE INDEX IF NOT EXISTS market_regimes_date_methodology_idx ON market_regimes (market_date, methodology_version)",
+        )
+        .run();
+    })().catch((error) => {
+      runtimeSchemaPromise = null;
+      throw error;
+    });
+  }
+  await runtimeSchemaPromise;
+}
+
 export async function runtimeEnv(): Promise<RuntimeEnv> {
   try {
     const cloudflare = await import("cloudflare:workers");
@@ -70,6 +92,7 @@ export async function runtimeEnv(): Promise<RuntimeEnv> {
 export async function requiredDatabase(): Promise<D1Database> {
   const db = (await runtimeEnv()).DB;
   if (!db) throw new Error("D1 binding unavailable");
+  await ensureRuntimeSchema(db);
   return db;
 }
 
