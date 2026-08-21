@@ -151,14 +151,21 @@ export async function POST(request: Request) {
       return errorResponse("conflicting_active_payload_for_market_date", 409);
     }
 
+    // A failed/partial publish can leave PENDING rows behind for this market date.
+    // Remove only those incomplete attempts before starting the replacement run.
+    // All child layers use ON DELETE CASCADE; ACTIVE verified runs are never touched.
+    await db
+      .prepare("DELETE FROM quant_runs WHERE status = 'PENDING' AND market_date = ?")
+      .bind(body.market_date)
+      .run();
+
     await db
       .prepare(
         `INSERT INTO quant_runs
          (id, market_date, status, provider, model_version, payload_hash,
           expected_symbols, received_symbols, valid_symbols, total_instruments,
           benchmark_date, validation_json, started_at)
-         VALUES (?, ?, 'PENDING', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO NOTHING`,
+         VALUES (?, ?, 'PENDING', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
       )
       .bind(
         body.run_id,
@@ -191,8 +198,7 @@ export async function POST(request: Request) {
           max_new_entries, trend_weight_multiplier, explanation_json,
           row_hash, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(run_id) DO NOTHING`,
+                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         body.regime.run_id,
@@ -263,8 +269,7 @@ export async function POST(request: Request) {
           state_payload_hash, expected_events, received_events,
           event_payload_hash, atr_stop_multiple, near_stop_atr_multiple,
           automatic_execution, started_at)
-         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)
-         ON CONFLICT(run_id) DO NOTHING`,
+         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)`
       )
       .bind(
         body.run_id,
@@ -301,8 +306,7 @@ export async function POST(request: Request) {
           received_allocations, allocation_payload_hash, summary_hash,
           summary_received, position_cap, sector_cap, correlation_threshold,
           automatic_execution, started_at)
-         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)
-         ON CONFLICT(run_id) DO NOTHING`,
+         VALUES (?, 'PENDING', ?, ?, 0, ?, ?, 0, ?, ?, ?, 0, ?)`
       )
       .bind(
         body.run_id,
