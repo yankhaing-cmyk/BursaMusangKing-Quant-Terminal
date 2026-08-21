@@ -1,0 +1,6 @@
+/* Approved mobile header refinement: keep RUN visually separated from the title. */
+@media (max-width: 760px) {
+  .brand-lockup {
+    margin-inline-end: 10px;
+  }
+}
