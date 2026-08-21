@@ -151,11 +151,13 @@ export async function POST(request: Request) {
       return errorResponse("conflicting_active_payload_for_market_date", 409);
     }
 
-    // A failed/partial publish can leave PENDING rows behind for this market date.
-    // Remove only those incomplete attempts before starting the replacement run.
-    // All child layers use ON DELETE CASCADE; ACTIVE verified runs are never touched.
+    // Failed/partial publications can leave incomplete rows for this market date.
+    // Clear only disposable PENDING/REJECTED attempts before creating the replacement run.
+    // ACTIVE verified runs and SUPERSEDED history are never touched.
     await db
-      .prepare("DELETE FROM quant_runs WHERE status = 'PENDING' AND market_date = ?")
+      .prepare(
+        "DELETE FROM quant_runs WHERE market_date = ? AND status IN ('PENDING', 'REJECTED')",
+      )
       .bind(body.market_date)
       .run();
 
