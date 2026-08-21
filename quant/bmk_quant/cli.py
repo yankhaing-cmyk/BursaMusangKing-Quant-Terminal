@@ -15,6 +15,7 @@ from .providers import DirectoryProvider, HttpManifestProvider, TradingViewFreeP
 from .publisher import QuantPublisher, token_from_environment
 from .storage import ResearchStore
 from .synthetic import make_synthetic_bundle, write_synthetic_directory
+from .trades import state_hash, state_payload_hash
 
 
 def _provider(source: str, args: argparse.Namespace):
@@ -25,6 +26,29 @@ def _provider(source: str, args: argparse.Namespace):
             request_delay=args.request_delay,
         )
     return HttpManifestProvider(source) if source.startswith("https://") else DirectoryProvider(source)
+
+
+def _normalize_trade_states_for_publish(
+    trade_states: list[dict],
+    trade_manifest: dict,
+) -> int:
+    """Normalize harmless zero ATR diagnostics on FLAT rows before publication.
+
+    BUY_PENDING/OPEN/NEAR_SELL states already require ATR14 > 0 in the trade engine.
+    A FLAT counter can legitimately have ATR14 == 0 after a no-range period; D1 ingest
+    treats trade price diagnostics as positive-or-null, so publish that diagnostic as
+    null rather than rejecting the entire verified universe.
+    """
+    changed = 0
+    for row in trade_states:
+        atr14 = row.get("atr14")
+        if row.get("state") == "FLAT" and atr14 is not None and float(atr14) == 0.0:
+            row["atr14"] = None
+            row["row_hash"] = state_hash(row)
+            changed += 1
+    if changed:
+        trade_manifest["state_payload_hash"] = state_payload_hash(trade_states)
+    return changed
 
 
 def run_command(args: argparse.Namespace) -> int:
@@ -50,6 +74,7 @@ def run_command(args: argparse.Namespace) -> int:
         store = ResearchStore(args.history_db)
         research_outcomes = store.save(result)
         trade_states, trade_events, trade_manifest = store.build_trade_artifacts(result)
+        _normalize_trade_states_for_publish(trade_states, trade_manifest)
         result.manifest["trade"] = trade_manifest
         portfolio_allocations, portfolio_summary, portfolio_manifest = store.build_portfolio_artifacts(
             result,
