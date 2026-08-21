@@ -5,6 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from bmk_quant.cli import _normalize_trade_states_for_publish
 from bmk_quant.config import QuantConfig
 from bmk_quant.pipeline import QuantPipeline
 from bmk_quant.storage import ResearchStore
@@ -39,6 +40,46 @@ class TradeStateTests(unittest.TestCase):
         self.assertEqual(str(tick_size(105.0)), "0.10")
         self.assertEqual(round_to_tick(0.887, floor=True), 0.885)
         self.assertEqual(round_to_tick(1.536, floor=True), 1.53)
+
+    def test_flat_zero_atr_is_normalized_before_publish(self) -> None:
+        row = {
+            "run_id": "qv1-test",
+            "market_date": "2026-08-20",
+            "methodology_version": METHODOLOGY_VERSION,
+            "symbol": "1TECH",
+            "trade_id": None,
+            "state": "FLAT",
+            "signal_run_id": None,
+            "signal_date": None,
+            "signal_score_bucket": None,
+            "entry_date": None,
+            "exit_date": None,
+            "entry_price": None,
+            "exit_price": None,
+            "peak_close": None,
+            "last_close": 0.125,
+            "atr14": 0.0,
+            "trailing_stop": None,
+            "stop_distance_pct": None,
+            "unrealized_return": None,
+            "quant_score": 40.0,
+            "signal_quant_score": None,
+            "signal_rank": None,
+            "regime_label": "RISK-ON",
+            "expected_edge_20d": None,
+            "edge_sample_size": 0,
+            "edge_confidence": "INSUFFICIENT",
+            "reason": "NO_ACTIVE_TRADE",
+        }
+        row["row_hash"] = state_hash(row)
+        old_hash = row["row_hash"]
+        states = [row]
+        manifest = {"state_payload_hash": "placeholder"}
+        changed = _normalize_trade_states_for_publish(states, manifest)
+        self.assertEqual(changed, 1)
+        self.assertIsNone(states[0]["atr14"])
+        self.assertNotEqual(states[0]["row_hash"], old_hash)
+        self.assertNotEqual(manifest["state_payload_hash"], "placeholder")
 
     def test_signal_then_next_session_entry_is_deterministic(self) -> None:
         first = self._policy(
